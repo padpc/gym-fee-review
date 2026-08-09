@@ -36,6 +36,7 @@ test('縮小ヘッダーの初期表示で月会費入力をスクロール前�
   await expect(header.getByRole('button')).toHaveCount(0);
 
   const monthlyFee = page.getByRole('textbox', { name: /^月会費/ });
+  await expect(page.getByText(/約3分・登録不要・保存なし/)).toBeVisible();
   const inputBox = await monthlyFee.boundingBox();
   expect(inputBox).not.toBeNull();
   const viewport = page.viewportSize();
@@ -57,6 +58,17 @@ test('本人の月額上限内で利用価値が強い結果を表示し、修�
   await expect(page.getByRole('heading', { name: '料金の判定' }).locator('..')).toContainText('あなたの基準内');
   await expect(page.getByRole('heading', { name: '月額相当に含めた費用' }).locator('..')).toContainText('月会費8,000円');
   await expect(page.getByRole('heading', { name: '利用価値の判定' }).locator('..')).toContainText('通う価値の根拠が強い');
+  const priceCard = page.getByRole('heading', { name: '料金の判定' }).locator('..');
+  const valueCard = page.getByRole('heading', { name: '利用価値の判定' }).locator('..');
+  const priceBox = await priceCard.boundingBox();
+  const valueBox = await valueCard.boundingBox();
+  expect(priceBox).not.toBeNull();
+  expect(valueBox).not.toBeNull();
+  if ((page.viewportSize()?.width ?? 0) <= 840) {
+    expect(valueBox?.y ?? 0).toBeGreaterThan((priceBox?.y ?? 0) + (priceBox?.height ?? 0) - 1);
+  } else {
+    expect(valueBox?.x ?? 0).toBeGreaterThan(priceBox?.x ?? 0);
+  }
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole('button', { name: '入力を修正' }).click();
@@ -122,6 +134,8 @@ test('回数不明でも必要回数とシナリオを示し、入力を端末�
   await expect(page.getByText('料金上は月8回で、1回上限以下になる計算です')).toBeVisible();
   await expect(page.getByRole('row', { name: /月0回 算出不可/ })).toBeVisible();
   await expect(page.getByRole('row', { name: /月20回 400円/ })).toBeVisible();
+  const scenarioTable = page.locator('.scenario-table-wrap');
+  expect(await scenarioTable.evaluate((element) => element.scrollWidth === element.clientWidth)).toBe(true);
   expect(externalRequests).toEqual([]);
 
   const browserState = await page.evaluate(async () => ({

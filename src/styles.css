@@ -694,7 +694,8 @@ summary:focus-visible,
 
 .scenario-table {
   width: 100%;
-  min-width: 380px;
+  min-width: 0;
+  table-layout: fixed;
   border-collapse: collapse;
   background: #fff;
 }
@@ -710,7 +711,12 @@ summary:focus-visible,
 .scenario-table td {
   padding: 8px 10px;
   border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
   text-align: left;
+}
+
+.scenario-table th:first-child {
+  width: 34%;
 }
 
 .scenario-table thead th {
@@ -798,13 +804,15 @@ summary:focus-visible,
   border: 0;
 }
 
+@media (max-width: 840px) {
+  .axis-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 760px) {
-  .axis-grid,
   .field-grid,
-  .choice-grid--three,
-  .choice-grid--four,
-  .choice-grid--purpose,
-  .choice-grid--bands {
+  .choice-grid--three {
     grid-template-columns: 1fr;
   }
 
@@ -897,6 +905,14 @@ summary:focus-visible,
   }
 }
 
+@media (max-width: 360px) {
+  .choice-grid--four,
+  .choice-grid--purpose,
+  .choice-grid--bands {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -910,5 +926,16 @@ summary:focus-visible,
   .status-label,
   .button {
     forced-color-adjust: none;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  summary:focus-visible,
+  [tabindex="-1"]:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 3px;
+    box-shadow: none;
+    forced-color-adjust: auto;
   }
 }
