@@ -1,64 +1,167 @@
 import { describe, expect, it } from 'vitest';
-import { validateCurrentInputs, validateDropInFee, validateG1Inputs } from './validation';
+import { createEmptyRawReviewInput, validateReviewInput } from './validation';
 
-describe('GFR-IN-001/004/010 G1入力検証', () => {
-  it('半角・全角の非負整数を受け付ける', () => {
-    expect(
-      validateG1Inputs({
-        currentMonthlyFee: '８０００',
-        visits: ['4', '５', '6'],
-        dropInFee: '1500',
-      }),
-    ).toEqual({
+describe('GFR-G1R 条件付き入力検証', () => {
+  it('全角数字、任意費用、先月実数を受け付ける', () => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('per-visit'),
+      monthlyFee: '８０００',
+      monthlyFixedFee: '５００',
+      annualFee: '１２００',
+      visitMode: 'exact',
+      exactVisits: '４',
+    });
+
+    expect(result).toEqual({
       ok: true,
-      value: { currentMonthlyFeeYen: 8_000, visits: [4, 5, 6], dropInFeeYen: 1_500 },
+      value: {
+        criterion: 'per-visit',
+        fees: { monthlyFeeYen: 8_000, monthlyFixedFeeYen: 500, annualFeeYen: 1_200 },
+        visits: { kind: 'exact', visits: 4 },
+        time: null,
+        usedServices: {},
+        importantServices: [],
+        continuation: [],
+      },
     });
   });
 
-  it.each([
-    ['', '月会費を入力してください。'],
-    ['-1', '月会費を0～100,000円の整数で入力してください。'],
-    ['1.5', '月会費を0～100,000円の整数で入力してください。'],
-    ['1e3', '月会費を0～100,000円の整数で入力してください。'],
-    ['100001', '月会費を0～100,000円の整数で入力してください。'],
-    ['abc', '月会費を0～100,000円の整数で入力してください。'],
-  ])('月会費 %s を拒否する', (value, message) => {
-    const result = validateCurrentInputs({ currentMonthlyFee: value, visits: ['4', '5', '6'] });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors['current-monthly-fee']).toBe(message);
+  it('任意費用の空欄を0として扱い、0円を受け付ける', () => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('per-visit'),
+      monthlyFee: '0',
+      visitMode: 'exact',
+      exactVisits: '0',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.fees).toEqual({ monthlyFeeYen: 0, monthlyFixedFeeYen: 0, annualFeeYen: 0 });
   });
 
-  it.each(['-1', '1.5', '101', '1e2', '回'])('無効な回数 %s を拒否する', (value) => {
-    const result = validateCurrentInputs({ currentMonthlyFee: '8000', visits: [value, '5', '6'] });
+  it.each(['', '-1', '1.5', '1e3', '100001', 'abc'])('無効な月会費 %s を拒否する', (monthlyFee) => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('per-visit'),
+      monthlyFee,
+      visitMode: 'unknown',
+    });
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors['visit-0']).toBe('来館回数を0～100回の整数で入力してください。');
+    if (!result.ok) expect(result.errors['monthly-fee']).toBeTruthy();
+  });
+
+  it('概数帯と回数不明を実績値へ変換しない', () => {
+    const range = validateReviewInput({
+      ...createEmptyRawReviewInput('per-visit'),
+      monthlyFee: '8000',
+      visitMode: 'range',
+      visitBand: 'weekly-1',
+    });
+    expect(range.ok && range.value.visits).toEqual({
+      kind: 'bounded',
+      bandId: 'weekly-1',
+      min: 4,
+      max: 6,
+    });
+
+    const unknown = validateReviewInput({
+      ...createEmptyRawReviewInput('per-visit'),
+      monthlyFee: '8000',
+      visitMode: 'unknown',
+    });
+    expect(unknown.ok && unknown.value.visits).toEqual({ kind: 'unknown' });
+  });
+
+  it('設備だけの経路では回数と時間を要求しない', () => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('services'),
+      monthlyFee: '8000',
+      usedServices: { pool: '1-3' },
+      importantServices: ['pool', 'classes'],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.visits).toBeNull();
+      expect(result.value.time).toBeNull();
     }
   });
 
-  it('空欄と0を区別し、全月0回を受け付ける', () => {
-    expect(validateCurrentInputs({ currentMonthlyFee: '0', visits: ['0', '0', '0'] })).toEqual({
-      ok: true,
-      value: { currentMonthlyFeeYen: 0, visits: [0, 0, 0] },
+  it('利用した設備には頻度を要求する', () => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('services'),
+      monthlyFee: '8000',
+      usedServices: { pool: '' },
     });
-    const empty = validateCurrentInputs({ currentMonthlyFee: '0', visits: ['', '0', '0'] });
-    expect(empty.ok).toBe(false);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors['service-pool-frequency']).toBe('プールの利用頻度を選んでください。');
   });
 
-  it('金額・回数の上限値を受け付け、上限桁数を超えるraw入力を拒否する', () => {
-    expect(
-      validateCurrentInputs({ currentMonthlyFee: '100000', visits: ['100', '100', '100'] }),
-    ).toEqual({
-      ok: true,
-      value: { currentMonthlyFeeYen: 100_000, visits: [100, 100, 100] },
+  it('別基準へ切り替えた後は非表示の設備入力で送信を妨げない', () => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('per-visit'),
+      monthlyFee: '8000',
+      visitMode: 'unknown',
+      usedServices: { pool: '' },
+      importantServices: ['pool'],
     });
-    expect(validateDropInFee('0000000').ok).toBe(false);
-  });
-
-  it('都度料金の空欄・負数・小数・上限超過を拒否する', () => {
-    for (const value of ['', '-1', '1.5', '100001']) {
-      expect(validateDropInFee(value).ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.usedServices).toEqual({});
+      expect(result.value.importantServices).toEqual([]);
     }
-    expect(validateDropInFee('100000')).toEqual({ ok: true, value: 100_000 });
+  });
+
+  it('合計滞在時間は0.1時間単位で受け付け、回数を要求しない', () => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('per-hour'),
+      monthlyFee: '8000',
+      timeMode: 'total',
+      totalHours: '６．０',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.visits).toBeNull();
+      expect(result.value.time).toEqual({ kind: 'total', totalMinutes: 360 });
+    }
+  });
+
+  it.each(['', '0', '0.01', '600.1', '-1', '1e2'])('無効な合計時間 %s を拒否する', (totalHours) => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('per-hour'),
+      monthlyFee: '8000',
+      timeMode: 'total',
+      totalHours,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors['total-hours']).toBeTruthy();
+  });
+
+  it('平均滞在時間では回数の分かり方を要求する', () => {
+    const invalid = validateReviewInput({
+      ...createEmptyRawReviewInput('per-hour'),
+      monthlyFee: '8000',
+      timeMode: 'average',
+      averageMinutes: '90',
+    });
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.errors['visit-mode']).toBe('回数の分かり方を選んでください。');
+
+    const valid = validateReviewInput({
+      ...createEmptyRawReviewInput('per-hour'),
+      monthlyFee: '8000',
+      timeMode: 'average',
+      averageMinutes: '90',
+      visitMode: 'range',
+      visitBand: 'weekly-1',
+    });
+    expect(valid.ok).toBe(true);
+  });
+
+  it('まとめて確認では時間を省略できる', () => {
+    const result = validateReviewInput({
+      ...createEmptyRawReviewInput('all'),
+      monthlyFee: '8000',
+      visitMode: 'unknown',
+      includeTime: false,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.time).toBeNull();
   });
 });

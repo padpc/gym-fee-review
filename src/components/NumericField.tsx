@@ -7,16 +7,34 @@ interface NumericFieldProps {
   maxLength: number;
   error?: string;
   hint?: string;
+  required?: boolean;
+  inputMode?: 'numeric' | 'decimal';
 }
 
-export function NumericField({ id, label, value, onChange, unit, maxLength, error, hint }: NumericFieldProps) {
+export function NumericField({
+  id,
+  label,
+  value,
+  onChange,
+  unit,
+  maxLength,
+  error,
+  hint,
+  required = true,
+  inputMode = 'numeric',
+}: NumericFieldProps) {
   const describedBy = [hint ? `${id}-hint` : '', `${id}-unit`, error ? `${id}-error` : '']
     .filter(Boolean)
     .join(' ');
 
   return (
     <div className={`field ${error ? 'field--error' : ''}`}>
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id}>
+        {label}
+        <span className={`field__status ${required ? 'field__status--required' : ''}`} aria-hidden="true">
+          {required ? '必須' : '任意'}
+        </span>
+      </label>
       {hint ? (
         <p className="field__hint" id={`${id}-hint`}>
           {hint}
@@ -27,13 +45,13 @@ export function NumericField({ id, label, value, onChange, unit, maxLength, erro
           id={id}
           name={id}
           type="text"
-          inputMode="numeric"
+          inputMode={inputMode}
           maxLength={maxLength}
           autoComplete="off"
           value={value}
           aria-invalid={Boolean(error)}
           aria-describedby={describedBy || undefined}
-          aria-required="true"
+          aria-required={required}
           onChange={(event) => onChange(event.target.value)}
         />
         <span id={`${id}-unit`}>{unit}</span>

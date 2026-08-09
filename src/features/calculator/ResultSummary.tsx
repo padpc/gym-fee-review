@@ -1,142 +1,253 @@
 import type { RefObject } from 'react';
-import type { G1Result } from '../../domain/comparison';
-import { unitsToRoundedYen } from '../../domain/money';
+import {
+  getCriterionLabel,
+  type PerHourResult,
+  type PerVisitResult,
+  type ReviewResult,
+} from '../../domain/review';
 import { formatNumber, formatYen } from '../../shared/format';
-import { BreakEvenTable } from './BreakEvenTable';
-import { createAnnualComparisonText, createThreeMonthComparisonText } from './result-copy';
 
 interface ResultSummaryProps {
-  result: G1Result;
+  result: ReviewResult;
   headingRef: RefObject<HTMLHeadingElement | null>;
-  onEditCandidate: () => void;
-  onEditCurrent: () => void;
+  onEdit: () => void;
+  onChangeCriterion: () => void;
 }
 
-export function ResultSummary({ result, headingRef, onEditCandidate, onEditCurrent }: ResultSummaryProps) {
-  const currentThreeMonth = unitsToRoundedYen(result.current.threeMonthUnits);
-  const candidateThreeMonth = unitsToRoundedYen(result.candidate.threeMonthUnits);
+function formatDuration(minutes: number): string {
+  if (minutes === 0) return '0分';
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (remainingMinutes === 0) return `${hours}時間`;
+  if (hours === 0) return `${remainingMinutes}分`;
+  return `${hours}時間${remainingMinutes}分`;
+}
 
+function formatDurationRange(minMinutes: number, maxMinutes: number): string {
+  if (minMinutes % 60 === 0 && maxMinutes % 60 === 0) {
+    return `${minMinutes / 60}～${maxMinutes / 60}時間`;
+  }
+  if (minMinutes < 60 && maxMinutes < 60) return `${minMinutes}～${maxMinutes}分`;
+  return `${formatDuration(minMinutes)}～${formatDuration(maxMinutes)}`;
+}
+
+function VisitKnowledgeLabel({ result }: { result: ReviewResult }) {
+  const visits = result.visits;
+  if (!visits) return null;
+  if (visits.kind === 'exact') return <p className="method-label">先月実数（{visits.visits}回）</p>;
+  if (visits.kind === 'bounded') {
+    return <p className="method-label">概数（月{visits.min}～{visits.max}回）</p>;
+  }
+  if (visits.kind === 'at-least') return <p className="method-label">概数（月{visits.min}回以上）</p>;
+  return <p className="method-label">回数不明</p>;
+}
+
+function PerVisitSection({ result }: { result: PerVisitResult }) {
+  return (
+    <section className="result-section" aria-labelledby="per-visit-heading">
+      <div className="section-heading">
+        <p className="eyebrow">料金の見え方</p>
+        <h3 id="per-visit-heading">1回あたり</h3>
+      </div>
+      {result.kind === 'exact' && result.yenPerVisit === null ? (
+        <div className="metric-card metric-card--neutral">
+          <strong>1回あたりは算出できません</strong>
+          <p>先月は0回でした。未利用月の月額相当は{formatYen(result.unusedPaymentYen)}です。</p>
+        </div>
+      ) : null}
+      {result.kind === 'exact' && result.yenPerVisit !== null ? (
+        <div className="metric-card">
+          <strong>約{formatNumber(result.yenPerVisit)}円／回</strong>
+          <p>月額相当 ÷ 先月の{result.visits}回。表示時に1円へ四捨五入しています。</p>
+        </div>
+      ) : null}
+      {result.kind === 'bounded' ? (
+        <div className="metric-card">
+          <strong>約{formatNumber(result.minYenPerVisit)}～{formatNumber(result.maxYenPerVisit)}円／回</strong>
+          <p>月{result.minVisits}～{result.maxVisits}回の両端で計算した範囲です。中央値を実績として扱っていません。</p>
+        </div>
+      ) : null}
+      {result.kind === 'at-least' ? (
+        <div className="metric-card">
+          <strong>約{formatNumber(result.maxYenPerVisit)}円以下／回</strong>
+          <p>月{result.minVisits}回で計算した上限です。実際の回数が多いほど単価は下がります。</p>
+        </div>
+      ) : null}
+      {result.kind === 'unknown' ? (
+        <div>
+          <p className="result-note">実績ではありません。回数別の目安です。</p>
+          <div className="scenario-table-wrap">
+            <table className="scenario-table">
+              <caption>月の回数別・1回あたり料金の目安</caption>
+              <thead>
+                <tr>
+                  <th scope="col">月の回数</th>
+                  <th scope="col">1回あたり</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.map((row) => (
+                  <tr key={row.visits}>
+                    <th scope="row">月{row.visits}回</th>
+                    <td>
+                      {row.yenPerVisit === null
+                        ? `算出不可（未利用月の支払額${formatYen(row.unusedPaymentYen ?? 0)}）`
+                        : formatYen(row.yenPerVisit)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function PerHourSection({ result }: { result: PerHourResult }) {
+  return (
+    <section className="result-section" aria-labelledby="per-hour-heading">
+      <div className="section-heading">
+        <p className="eyebrow">滞在時間から確認</p>
+        <h3 id="per-hour-heading">1時間あたり</h3>
+      </div>
+      {result.kind === 'total' ? (
+        <div className="metric-card">
+          <strong>約{formatNumber(result.yenPerHour)}円／時間</strong>
+          <p>先月の合計滞在時間：{formatDuration(result.totalMinutes)}</p>
+        </div>
+      ) : null}
+      {result.kind === 'exact' && result.yenPerHour === null ? (
+        <div className="metric-card metric-card--neutral">
+          <strong>1時間あたりは算出できません</strong>
+          <p>先月0回のため、平均滞在時間から合計時間を算出できません。</p>
+        </div>
+      ) : null}
+      {result.kind === 'exact' && result.yenPerHour !== null ? (
+        <div className="metric-card">
+          <strong>約{formatNumber(result.yenPerHour)}円／時間</strong>
+          <p>平均{result.averageMinutes}分 × {result.visits}回 ＝ {formatDuration(result.totalMinutes)}</p>
+        </div>
+      ) : null}
+      {result.kind === 'bounded' ? (
+        <div className="metric-card">
+          <strong>約{formatNumber(result.minYenPerHour)}～{formatNumber(result.maxYenPerHour)}円／時間</strong>
+          <p>合計滞在時間の目安：{formatDurationRange(result.minTotalMinutes, result.maxTotalMinutes)}</p>
+          <p>回数範囲の両端で計算し、中央値へ丸めていません。</p>
+        </div>
+      ) : null}
+      {result.kind === 'at-least' ? (
+        <div className="metric-card">
+          <strong>約{formatNumber(result.maxYenPerHour)}円以下／時間</strong>
+          <p>合計滞在時間は{formatDuration(result.minTotalMinutes)}以上の目安です。</p>
+        </div>
+      ) : null}
+      {result.kind === 'unknown' ? (
+        <div>
+          <p className="result-note">実績ではありません。平均{result.averageMinutes}分として回数別に計算しています。</p>
+          <div className="scenario-table-wrap">
+            <table className="scenario-table">
+              <caption>月の回数別・1時間あたり料金の目安</caption>
+              <thead>
+                <tr>
+                  <th scope="col">月の回数</th>
+                  <th scope="col">合計滞在</th>
+                  <th scope="col">1時間あたり</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.map((row) => (
+                  <tr key={row.visits}>
+                    <th scope="row">月{row.visits}回</th>
+                    <td>{formatDuration(row.totalMinutes)}</td>
+                    <td>{row.yenPerHour === null ? '算出不可' : formatYen(row.yenPerHour)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+      <p className="scope-note">ここで使うのは滞在時間であり、運動時間や健康効果の評価ではありません。</p>
+    </section>
+  );
+}
+
+export function ResultSummary({ result, headingRef, onEdit, onChangeCriterion }: ResultSummaryProps) {
   return (
     <section className="result" aria-labelledby="result-heading">
       <div className="result__heading-row">
-        <p className="eyebrow">料金比較</p>
-        <h2 id="result-heading" ref={headingRef} tabIndex={-1}>
-          比較結果
-        </h2>
+        <p className="eyebrow">基準ごとに分けて表示</p>
+        <h2 id="result-heading" ref={headingRef} tabIndex={-1}>会費の見え方</h2>
+        <p>{getCriterionLabel(result.criterion)}</p>
+        <VisitKnowledgeLabel result={result} />
       </div>
 
-      <div className="result__usage">
-        {result.visitsTotal === 0 ? (
-          <>
-            <p className="result__usage-main">直近3か月の利用は0回でした。</p>
-            <p>{`1回あたり費用は算出できません。利用がなかった3か月の支払額は${formatYen(currentThreeMonth)}です。`}</p>
-          </>
-        ) : (
-          <>
-            <p className="result__usage-main">
-              直近3か月は合計{result.visitsTotal}回、平均{result.visitsAverage.toFixed(1)}回／月でした。
-            </p>
-            <p>{`現在プランの支払額は、1回あたり約${formatNumber(result.current.perVisitYen ?? 0)}円です。`}</p>
-          </>
-        )}
-      </div>
-
-      <div className="result__verdict">
-        <p>{createAnnualComparisonText(result.annualComparison)}</p>
-        <span>費用以外の価値は判定していません</span>
-      </div>
-
-      <section className="result-section" aria-labelledby="breakdown-heading">
-        <div className="section-heading">
-          <p className="eyebrow">内訳</p>
-          <h3 id="breakdown-heading">直近3か月と年間予測</h3>
-          <p>{createThreeMonthComparisonText(result.threeMonthComparison)}</p>
+      <section className="monthly-summary" aria-labelledby="monthly-summary-heading">
+        <div>
+          <p className="eyebrow">共通の計算元</p>
+          <h3 id="monthly-summary-heading">月額相当</h3>
         </div>
-        <div className="cost-grid">
-          <article>
-            <h4>現在プラン</h4>
-            <dl>
-              <div>
-                <dt>直近3か月</dt>
-                <dd>{formatYen(currentThreeMonth)}</dd>
-              </div>
-              <div>
-                <dt>3か月平均月額</dt>
-                <dd>{formatYen(unitsToRoundedYen(result.current.monthlyAverageUnits))}</dd>
-              </div>
-              <div>
-                <dt>年間予測</dt>
-                <dd>{formatYen(unitsToRoundedYen(result.current.annualUnits))}</dd>
-              </div>
-            </dl>
-          </article>
-          <article>
-            <h4>都度払い候補</h4>
-            <dl>
-              <div>
-                <dt>直近3か月</dt>
-                <dd>{formatYen(candidateThreeMonth)}</dd>
-              </div>
-              <div>
-                <dt>3か月平均月額</dt>
-                <dd>{formatYen(unitsToRoundedYen(result.candidate.monthlyAverageUnits))}</dd>
-              </div>
-              <div>
-                <dt>年間予測</dt>
-                <dd>{formatYen(unitsToRoundedYen(result.candidate.annualUnits))}</dd>
-              </div>
-            </dl>
-          </article>
-        </div>
+        <strong>{formatYen(result.monthly.roundedYen)}</strong>
+        <p>月会費、毎月必須の固定費、年会費等の12分の1を含めた金額です。</p>
       </section>
 
-      <section className="result-section" aria-labelledby="boundary-heading">
-        <div className="section-heading">
-          <p className="eyebrow">利用回数ごとの比較</p>
-          <h3 id="boundary-heading">月何回で料金の低い側が変わるか</h3>
-          <p className="boundary-message">{result.boundary.message}</p>
-        </div>
-        <details open>
-          <summary>月0～20回の料金表</summary>
-          <BreakEvenTable rows={result.rows} boundaryVisits={result.boundary.boundaryVisits} />
-        </details>
-      </section>
+      {result.perVisit ? <PerVisitSection result={result.perVisit} /> : null}
+      {result.perHour ? <PerHourSection result={result.perHour} /> : null}
 
-      <section className="assumptions" aria-labelledby="assumptions-heading">
-        <h3 id="assumptions-heading">この試算に含めたもの・含めないもの</h3>
-        <div className="assumptions__grid">
-          <div>
-            <h4>含めた料金</h4>
-            <ul>
-              <li>現在の月会費</li>
-              <li>候補の1回料金</li>
-            </ul>
+      {result.services ? (
+        <section className="result-section" aria-labelledby="services-result-heading">
+          <div className="section-heading">
+            <p className="eyebrow">利用と重要性は別表示</p>
+            <h3 id="services-result-heading">設備・プログラム</h3>
           </div>
-          <div>
-            <h4>含めていない条件</h4>
-            <ul>
-              <li>年会費、オプション、一時費用</li>
-              <li>キャンペーン、日割り、値上げ</li>
-              <li>健康効果、設備、混雑、通いやすさ</li>
-            </ul>
+          <div className="review-list-grid">
+            <section aria-labelledby="used-services-heading">
+              <h4 id="used-services-heading">そのひと月に使ったもの</h4>
+              {result.services.used.length ? (
+                <ul>{result.services.used.map((item) => <li key={item.id}>{item.label}：{item.frequencyLabel}</li>)}</ul>
+              ) : <p>選択された設備はありません。未選択を「価値なし」とは判定しません。</p>}
+            </section>
+            <section aria-labelledby="important-services-heading">
+              <h4 id="important-services-heading">会費を払う理由として重要なもの</h4>
+              {result.services.important.length ? (
+                <ul>{result.services.important.map((item) => <li key={item.id}>{item.label}</li>)}</ul>
+              ) : <p>選択された項目はありません。重要なものがないとは判定しません。</p>}
+            </section>
           </div>
-        </div>
-        <div className="official-check">
-          <p>
-            これは入力した料金だけの試算です。健康効果、設備、混雑、距離、通いやすさ、キャンペーン、日割り、値上げ、違約金、退会期限は自動判定していません。
-          </p>
-          <p>契約変更の前に、契約先の最新料金と条件を公式情報で確認してください。</p>
-          <p>年間予測は、直近3か月の各月の利用回数が同じパターンで続く仮定です。</p>
-        </div>
+          {result.services.importantButUnused.length ? (
+            <div className="important-unused">
+              <p>重要だが、そのひと月は使っていないもの</p>
+              <ul>{result.services.importantButUnused.map((item) => <li key={item.id}>{item.label}</li>)}</ul>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {result.continuation ? (
+        <section className="result-section" aria-labelledby="continuation-result-heading">
+          <div className="section-heading">
+            <p className="eyebrow">金額へ換算しない確認</p>
+            <h3 id="continuation-result-heading">料金以外で失いたくない条件</h3>
+          </div>
+          {result.continuation.length ? (
+            <ul className="continuation-result-list">
+              {result.continuation.map((item) => <li key={item.id}>{item.label}</li>)}
+            </ul>
+          ) : <p>選択された条件はありません。続けやすさがないとは判定しません。</p>}
+        </section>
+      ) : null}
+
+      <section className="official-check" aria-labelledby="official-check-heading">
+        <h3 id="official-check-heading">最後は公式条件を確認してください</h3>
+        <p>この結果は入力内容を基準別に整理したものです。一つの評価へまとめたり、継続・休会・退会を自動で勧めたりしません。</p>
+        <p>料金、利用可能時間、休会・変更・退会期限は契約先の最新情報で確認してください。</p>
       </section>
 
       <div className="result__actions">
-        <button className="button button--primary" type="button" onClick={onEditCandidate}>
-          都度料金を修正
-        </button>
-        <button className="button button--secondary" type="button" onClick={onEditCurrent}>
-          現在の料金・回数を修正
-        </button>
+        <button className="button button--primary" type="button" onClick={onEdit}>入力を修正</button>
+        <button className="button button--secondary" type="button" onClick={onChangeCriterion}>基準を選び直す</button>
       </div>
     </section>
   );

@@ -1,15 +1,13 @@
-import type { ErrorMap, G1FieldId } from '../domain/validation';
+import type { ErrorMap } from '../domain/validation';
 
-const errorOrder: G1FieldId[] = [
-  'current-monthly-fee',
-  'visit-0',
-  'visit-1',
-  'visit-2',
-  'drop-in-fee',
-];
+interface ErrorSummaryProps {
+  errors: ErrorMap;
+  order: string[];
+}
 
-export function ErrorSummary({ errors }: { errors: ErrorMap }) {
-  const entries = errorOrder.flatMap((fieldId) => {
+export function ErrorSummary({ errors, order }: ErrorSummaryProps) {
+  const orderedIds = [...order, ...Object.keys(errors).filter((fieldId) => !order.includes(fieldId))];
+  const entries = orderedIds.flatMap((fieldId) => {
     const message = errors[fieldId];
     return message ? [{ fieldId, message }] : [];
   });
