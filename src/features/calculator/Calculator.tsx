@@ -1,55 +1,59 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ErrorSummary } from '../../components/ErrorSummary';
 import { NumericField } from '../../components/NumericField';
 import {
-  continuationCatalog,
-  criterionOptions,
-  serviceCatalog,
-  usageFrequencyLabels,
+  buildAssessmentResult,
+  priceBenchmarkOptions,
+  purposeOptions,
+  purposeProgressOptions,
+  replaceabilityOptions,
   visitBandOptions,
-  buildReviewResult,
-  getCriterionLabel,
-  type ContinuationId,
-  type ReviewResult,
-  type ServiceId,
-  type TimeMode,
-  type UsageFrequency,
+  type AssessmentResult,
+  type PriceBenchmarkKind,
+  type PurposeId,
+  type PurposeProgress,
+  type Replaceability,
   type VisitBandId,
   type VisitMode,
-} from '../../domain/review';
+} from '../../domain/assessment';
 import {
-  createEmptyRawReviewInput,
-  validateReviewInput,
+  createEmptyRawAssessmentInput,
+  validateAssessmentInput,
   type ErrorMap,
-  type RawReviewInput,
+  type RawAssessmentInput,
 } from '../../domain/validation';
 import { ResultSummary } from './ResultSummary';
-
-type Step = 'criterion' | 'inputs' | 'result';
 
 const errorOrder = [
   'monthly-fee',
   'monthly-fixed-fee',
   'annual-fee',
-  'time-mode',
+  'benchmark-kind',
+  'monthly-limit',
+  'per-visit-limit',
+  'alternative-monthly',
   'visit-mode',
-  'visit-band',
   'exact-visits',
-  'total-hours',
-  'average-minutes',
-  ...serviceCatalog.map((service) => `service-${service.id}-frequency`),
+  'visit-band',
+  'purpose',
+  'purpose-progress',
+  'replaceability',
 ];
 
-const rawKeyToFieldId: Partial<Record<keyof RawReviewInput, string>> = {
+const rawKeyToFieldId: Partial<Record<keyof RawAssessmentInput, string>> = {
   monthlyFee: 'monthly-fee',
   monthlyFixedFee: 'monthly-fixed-fee',
   annualFee: 'annual-fee',
+  benchmarkKind: 'benchmark-kind',
+  monthlyLimit: 'monthly-limit',
+  perVisitLimit: 'per-visit-limit',
+  alternativeMonthly: 'alternative-monthly',
   visitMode: 'visit-mode',
-  visitBand: 'visit-band',
   exactVisits: 'exact-visits',
-  timeMode: 'time-mode',
-  totalHours: 'total-hours',
-  averageMinutes: 'average-minutes',
+  visitBand: 'visit-band',
+  purpose: 'purpose',
+  purposeProgress: 'purpose-progress',
+  replaceability: 'replaceability',
 };
 
 function focusFirstError(errors: ErrorMap) {
@@ -91,7 +95,7 @@ function ChoiceOption({ id, name, value, checked, label, description, onChange }
 }
 
 interface VisitFieldsProps {
-  raw: RawReviewInput;
+  raw: RawAssessmentInput;
   errors: ErrorMap;
   onModeChange: (mode: VisitMode) => void;
   onBandChange: (band: VisitBandId) => void;
@@ -101,17 +105,20 @@ interface VisitFieldsProps {
 
 function VisitFields({ raw, errors, onModeChange, onBandChange, onExactChange, clearError }: VisitFieldsProps) {
   return (
-    <fieldset className={`option-section ${errors['visit-mode'] ? 'option-section--error' : ''}`} aria-describedby={errors['visit-mode'] ? 'visit-mode-error' : undefined}>
-      <legend>回数の分かり方</legend>
-      <p className="field__hint">覚えている範囲で選べます。3か月分を用意する必要はありません。</p>
-      <div className="stacked-choices">
+    <fieldset
+      className={`option-section ${errors['visit-mode'] ? 'option-section--error' : ''}`}
+      aria-describedby={errors['visit-mode'] ? 'visit-mode-error' : undefined}
+    >
+      <legend>先月の回数は分かりますか</legend>
+      <p className="field__hint">1回上限との比較にだけ使います。3か月分は不要です。</p>
+      <div className="choice-grid choice-grid--three">
         <ChoiceOption
           id="visit-mode"
           name="visit-mode"
           value="exact"
           checked={raw.visitMode === 'exact'}
-          label="先月の回数が分かる"
-          description="直前に完了した1か月の実数"
+          label="回数が分かる"
+          description="先月の実数を入力"
           onChange={() => onModeChange('exact')}
         />
         <ChoiceOption
@@ -119,8 +126,8 @@ function VisitFields({ raw, errors, onModeChange, onBandChange, onExactChange, c
           name="visit-mode"
           value="range"
           checked={raw.visitMode === 'range'}
-          label="だいたいの頻度なら分かる"
-          description="週1回前後などの範囲で確認"
+          label="だいたい分かる"
+          description="頻度の範囲を選択"
           onChange={() => onModeChange('range')}
         />
         <ChoiceOption
@@ -128,8 +135,8 @@ function VisitFields({ raw, errors, onModeChange, onBandChange, onExactChange, c
           name="visit-mode"
           value="unknown"
           checked={raw.visitMode === 'unknown'}
-          label="分からない（回数別の目安を見る）"
-          description="入力なしで複数の回数例を表示"
+          label="分からない"
+          description="必要回数と回数例を表示"
           onChange={() => onModeChange('unknown')}
         />
       </div>
@@ -148,15 +155,18 @@ function VisitFields({ raw, errors, onModeChange, onBandChange, onExactChange, c
             unit="回"
             maxLength={3}
             error={errors['exact-visits']}
-            hint="公式アプリ、カレンダー、手帳などで確認できる場合だけ"
+            hint="0回もそのまま入力できます"
           />
         </div>
       ) : null}
 
       {raw.visitMode === 'range' ? (
-        <fieldset className={`nested-fieldset ${errors['visit-band'] ? 'option-section--error' : ''}`} aria-describedby={errors['visit-band'] ? 'visit-band-error' : undefined}>
+        <fieldset
+          className={`nested-fieldset ${errors['visit-band'] ? 'option-section--error' : ''}`}
+          aria-describedby={errors['visit-band'] ? 'visit-band-error' : undefined}
+        >
           <legend>だいたいの頻度</legend>
-          <div className="compact-choice-grid">
+          <div className="choice-grid choice-grid--bands">
             {visitBandOptions.map((band, index) => (
               <ChoiceOption
                 key={band.id}
@@ -174,209 +184,22 @@ function VisitFields({ raw, errors, onModeChange, onBandChange, onExactChange, c
       ) : null}
 
       {raw.visitMode === 'unknown' ? (
-        <p className="inline-note" aria-live="polite">入力は不要です。月0～20回の代表例で1回あたりを表示します。</p>
+        <p className="inline-note">回数入力は不要です。上限を満たす料金上の回数と、回数別の目安を示します。</p>
       ) : null}
-    </fieldset>
-  );
-}
-
-interface TimeFieldsProps {
-  raw: RawReviewInput;
-  errors: ErrorMap;
-  allowTotal: boolean;
-  onModeChange: (mode: TimeMode) => void;
-  onTotalChange: (value: string) => void;
-  onAverageChange: (value: string) => void;
-  clearError: (fieldId: string) => void;
-}
-
-function TimeFields({ raw, errors, allowTotal, onModeChange, onTotalChange, onAverageChange, clearError }: TimeFieldsProps) {
-  const effectiveMode = allowTotal ? raw.timeMode : 'average';
-  return (
-    <fieldset className={`option-section ${errors['time-mode'] ? 'option-section--error' : ''}`} aria-describedby={errors['time-mode'] ? 'time-mode-error' : undefined}>
-      <legend>滞在時間の分かり方</legend>
-      {allowTotal ? (
-        <div className="stacked-choices stacked-choices--two">
-          <ChoiceOption
-            id="time-mode"
-            name="time-mode"
-            value="total"
-            checked={raw.timeMode === 'total'}
-            label="先月の合計滞在時間"
-            description="回数入力は不要"
-            onChange={() => onModeChange('total')}
-          />
-          <ChoiceOption
-            id="time-mode-average"
-            name="time-mode"
-            value="average"
-            checked={raw.timeMode === 'average'}
-            label="1回の平均滞在時間"
-            description="回数の実数・概数・不明と組み合わせる"
-            onChange={() => onModeChange('average')}
-          />
-        </div>
-      ) : <p className="inline-note">概数・回数不明では、1回の平均滞在時間から範囲・目安を計算します。</p>}
-      {errors['time-mode'] ? <p className="field__error" id="time-mode-error">{errors['time-mode']}</p> : null}
-
-      {effectiveMode === 'total' ? (
-        <div className="nested-input">
-          <NumericField
-            id="total-hours"
-            label="先月の合計滞在時間"
-            value={raw.totalHours}
-            onChange={(value) => {
-              onTotalChange(value);
-              clearError('total-hours');
-            }}
-            unit="時間"
-            maxLength={5}
-            inputMode="decimal"
-            error={errors['total-hours']}
-            hint="0.1～600.0時間、小数1桁まで"
-          />
-        </div>
-      ) : null}
-      {effectiveMode === 'average' ? (
-        <div className="nested-input">
-          <NumericField
-            id="average-minutes"
-            label="1回の平均滞在時間"
-            value={raw.averageMinutes}
-            onChange={(value) => {
-              onAverageChange(value);
-              clearError('average-minutes');
-            }}
-            unit="分"
-            maxLength={3}
-            error={errors['average-minutes']}
-            hint="着替え、休憩、入浴等を含む滞在時間。10～600分"
-          />
-        </div>
-      ) : null}
-    </fieldset>
-  );
-}
-
-interface ServiceFieldsProps {
-  raw: RawReviewInput;
-  errors: ErrorMap;
-  onUsedToggle: (serviceId: ServiceId, checked: boolean) => void;
-  onFrequencyChange: (serviceId: ServiceId, frequency: UsageFrequency) => void;
-  onImportantToggle: (serviceId: ServiceId, checked: boolean) => void;
-  clearError: (fieldId: string) => void;
-}
-
-function ServiceFields({ raw, errors, onUsedToggle, onFrequencyChange, onImportantToggle, clearError }: ServiceFieldsProps) {
-  return (
-    <section className="input-section" aria-labelledby="services-input-heading">
-      <div className="input-section__heading">
-        <p className="eyebrow">金額や点数へ変換しません</p>
-        <h4 id="services-input-heading">設備・プログラム</h4>
-        <p>最近の典型的な1か月を思い浮かべてください。利用と重要性は別々に選びます。</p>
-      </div>
-      <fieldset className="check-fieldset">
-        <legend>そのひと月に使ったもの</legend>
-        <div className="check-grid">
-          {serviceCatalog.map((service) => {
-            const isUsed = Object.prototype.hasOwnProperty.call(raw.usedServices, service.id);
-            const errorId = `service-${service.id}-frequency`;
-            return (
-              <div className={`check-item ${isUsed ? 'check-item--selected' : ''}`} key={service.id}>
-                <label className="check-control">
-                  <input
-                    type="checkbox"
-                    checked={isUsed}
-                    onChange={(event) => onUsedToggle(service.id, event.target.checked)}
-                  />
-                  <span>{service.label}を使った</span>
-                </label>
-                {isUsed ? (
-                  <div className="select-field">
-                    <label htmlFor={errorId}>{service.label}の利用頻度</label>
-                    <select
-                      id={errorId}
-                      value={raw.usedServices[service.id] ?? ''}
-                      aria-invalid={Boolean(errors[errorId])}
-                      aria-describedby={errors[errorId] ? `${errorId}-error` : undefined}
-                      onChange={(event) => {
-                        onFrequencyChange(service.id, event.target.value as UsageFrequency);
-                        clearError(errorId);
-                      }}
-                    >
-                      <option value="">選んでください</option>
-                      {Object.entries(usageFrequencyLabels).map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
-                    {errors[errorId] ? <p className="field__error" id={`${errorId}-error`}>{errors[errorId]}</p> : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </fieldset>
-      <fieldset className="check-fieldset">
-        <legend>会費を払う理由として重要なもの</legend>
-        <div className="check-grid check-grid--simple">
-          {serviceCatalog.map((service) => (
-            <label className="check-control check-control--card" key={service.id}>
-              <input
-                type="checkbox"
-                checked={raw.importantServices.includes(service.id)}
-                onChange={(event) => onImportantToggle(service.id, event.target.checked)}
-              />
-              <span>{service.label}は会費を払う理由として重要</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-    </section>
-  );
-}
-
-function ContinuationFields({ raw, onToggle }: { raw: RawReviewInput; onToggle: (id: ContinuationId, checked: boolean) => void }) {
-  return (
-    <fieldset className="option-section">
-      <legend>料金以外で失いたくない条件</legend>
-      <p className="field__hint">任意です。選んだ数を点数や金額へ変換しません。</p>
-      <div className="check-grid check-grid--simple">
-        {continuationCatalog.map((item) => (
-          <label className="check-control check-control--card" key={item.id}>
-            <input
-              type="checkbox"
-              checked={raw.continuation.includes(item.id)}
-              onChange={(event) => onToggle(item.id, event.target.checked)}
-            />
-            <span>{item.label}</span>
-          </label>
-        ))}
-      </div>
     </fieldset>
   );
 }
 
 export function Calculator() {
-  const [step, setStep] = useState<Step>('criterion');
-  const [raw, setRaw] = useState<RawReviewInput>(() => createEmptyRawReviewInput());
-  const [criterionError, setCriterionError] = useState('');
+  const [raw, setRaw] = useState<RawAssessmentInput>(() => createEmptyRawAssessmentInput());
   const [errors, setErrors] = useState<ErrorMap>({});
-  const [result, setResult] = useState<ReviewResult | null>(null);
+  const [result, setResult] = useState<AssessmentResult | null>(null);
   const inputHeadingRef = useRef<HTMLHeadingElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
 
-  const showsVisitFields = useMemo(() => {
-    if (raw.criterion === 'per-visit' || raw.criterion === 'all') return true;
-    return raw.criterion === 'per-hour' && raw.timeMode === 'average';
-  }, [raw.criterion, raw.timeMode]);
-  const showsServices = raw.criterion === 'services' || raw.criterion === 'all';
-  const showsContinuation = raw.criterion === 'continuation' || raw.criterion === 'all';
-
   useEffect(() => {
-    if (step === 'inputs') inputHeadingRef.current?.focus();
-    if (step === 'result') resultHeadingRef.current?.focus();
-  }, [step]);
+    if (result) resultHeadingRef.current?.focus();
+  }, [result]);
 
   function clearErrors(fieldIds: string[]) {
     setErrors((current) => {
@@ -391,150 +214,90 @@ export function Calculator() {
     clearErrors([fieldId]);
   }
 
-  function updateRaw<K extends keyof RawReviewInput>(key: K, value: RawReviewInput[K]) {
+  function updateRaw<K extends keyof RawAssessmentInput>(key: K, value: RawAssessmentInput[K]) {
     setRaw((current) => ({ ...current, [key]: value }));
     const fieldId = rawKeyToFieldId[key];
     if (fieldId) clearError(fieldId);
   }
 
-  function submitCriterion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!raw.criterion) {
-      setCriterionError('確認したい基準を選んでください。');
-      requestAnimationFrame(() => document.getElementById('criterion')?.focus());
-      return;
-    }
-    setCriterionError('');
-    setStep('inputs');
+  function changeBenchmark(kind: PriceBenchmarkKind) {
+    updateRaw('benchmarkKind', kind);
+    clearErrors([
+      'benchmark-kind',
+      'monthly-limit',
+      'per-visit-limit',
+      'alternative-monthly',
+      'visit-mode',
+      'exact-visits',
+      'visit-band',
+    ]);
   }
 
-  function submitInputs(event: FormEvent<HTMLFormElement>) {
+  function changeVisitMode(mode: VisitMode) {
+    updateRaw('visitMode', mode);
+    clearErrors(['visit-mode', 'exact-visits', 'visit-band']);
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const validation = validateReviewInput(raw);
+    const validation = validateAssessmentInput(raw);
     if (!validation.ok) {
       setErrors(validation.errors);
       focusFirstError(validation.errors);
       return;
     }
     setErrors({});
-    setResult(buildReviewResult(validation.value));
-    setStep('result');
-  }
-
-  function changeCriterion() {
-    setResult(null);
-    setErrors({});
-    setStep('criterion');
-    requestAnimationFrame(() => document.getElementById('criterion')?.focus());
+    setResult(buildAssessmentResult(validation.value));
   }
 
   function editInputs() {
     setResult(null);
     setErrors({});
-    setStep('inputs');
+    requestAnimationFrame(() => inputHeadingRef.current?.focus());
   }
 
-  function changeVisitMode(mode: VisitMode) {
-    setRaw((current) => ({
-      ...current,
-      visitMode: mode,
-      timeMode: current.criterion === 'all' && current.includeTime && mode !== 'exact'
-        ? 'average'
-        : current.timeMode,
-    }));
-    clearErrors([
-      'visit-mode',
-      'visit-band',
-      'exact-visits',
-      'time-mode',
-      'total-hours',
-      'average-minutes',
-    ]);
+  if (result) {
+    return <ResultSummary result={result} headingRef={resultHeadingRef} onEdit={editInputs} />;
   }
 
-  function changeTimeMode(mode: TimeMode) {
-    setRaw((current) => ({ ...current, timeMode: mode }));
-    clearErrors(['time-mode', 'total-hours', 'average-minutes']);
-  }
-
-  function toggleUsedService(serviceId: ServiceId, checked: boolean) {
-    setRaw((current) => {
-      const usedServices = { ...current.usedServices };
-      if (checked) usedServices[serviceId] = '';
-      else delete usedServices[serviceId];
-      return { ...current, usedServices };
-    });
-    clearError(`service-${serviceId}-frequency`);
-  }
-
-  function toggleListValue<T extends string>(values: T[], value: T, checked: boolean): T[] {
-    return checked ? [...new Set([...values, value])] : values.filter((current) => current !== value);
-  }
+  const optionalFeesOpen = Boolean(
+    raw.monthlyFixedFee || raw.annualFee || errors['monthly-fixed-fee'] || errors['annual-fee'],
+  );
 
   return (
     <section className="calculator" id="calculator" aria-labelledby="calculator-heading">
       <div className="calculator__intro">
-        <p className="eyebrow">登録不要・入力はこの画面だけ</p>
-        <h2 id="calculator-heading">会費の見え方を確認する</h2>
-        <p>準備するのは月会費だけ。回数が分からなくても始められます。</p>
-        <p className="calculator__scope-note">料金、時間、利用サービス、続けやすさを混ぜずに表示します。</p>
+          <p className="eyebrow">約3分・登録不要・保存なし</p>
+        <h2 id="calculator-heading" ref={inputHeadingRef} tabIndex={-1}>料金と利用価値を入力</h2>
+        <p>本人の料金基準と、入会目的を実現できているかを別々に確認します。</p>
       </div>
 
-      {step === 'criterion' ? (
-        <form className="form-card" noValidate onSubmit={submitCriterion}>
-          <div className="step-label" aria-label="2段階中の1段階目"><span>1</span><p>確認基準</p></div>
-          <fieldset className={`criteria-fieldset ${criterionError ? 'option-section--error' : ''}`} aria-describedby={criterionError ? 'criterion-error' : undefined}>
-            <legend>何を基準に確認しますか</legend>
-            <p className="field__hint">あとから選び直せます。運営者が決めた一つの評価にはまとめません。</p>
-            <div className="criteria-grid">
-              {criterionOptions.map((option, index) => (
-                <ChoiceOption
-                  key={option.id}
-                  id={index === 0 ? 'criterion' : `criterion-${option.id}`}
-                  name="criterion"
-                  value={option.id}
-                  checked={raw.criterion === option.id}
-                  label={option.label}
-                  description={option.description}
-                  onChange={() => {
-                    updateRaw('criterion', option.id);
-                    setCriterionError('');
-                  }}
-                />
-              ))}
-            </div>
-            {criterionError ? <p className="field__error" id="criterion-error">{criterionError}</p> : null}
-          </fieldset>
-          <button className="button button--primary button--full" type="submit">この基準で入力へ</button>
-        </form>
-      ) : null}
+      <form className="assessment-form" noValidate onSubmit={submit}>
+        <ErrorSummary errors={errors} order={errorOrder} />
 
-      {step === 'inputs' && raw.criterion ? (
-        <form className="form-card" noValidate onSubmit={submitInputs}>
-          <div className="step-label" aria-label="2段階中の2段階目"><span>2</span><p>必要な入力</p></div>
-          <div className="form-card__heading">
-            <h3 ref={inputHeadingRef} tabIndex={-1}>必要な項目を入力</h3>
-            <p className="selected-criterion">選択中：{getCriterionLabel(raw.criterion)}</p>
-            <button className="text-button" type="button" onClick={changeCriterion}>基準を変更</button>
+        <section className="form-section" aria-labelledby="fee-heading">
+          <div className="form-section__heading">
+            <span className="step-number" aria-hidden="true">1</span>
+            <div>
+              <p className="eyebrow">料金</p>
+              <h3 id="fee-heading">今の会費を入力</h3>
+            </div>
           </div>
-          <ErrorSummary errors={errors} order={errorOrder} />
+          <NumericField
+            id="monthly-fee"
+            label="月会費"
+            value={raw.monthlyFee}
+            onChange={(value) => updateRaw('monthlyFee', value)}
+            unit="円"
+            maxLength={6}
+            error={errors['monthly-fee']}
+            hint="税込の通常月額。分かる範囲で最新の金額を入力"
+          />
 
-          <section className="input-section" aria-labelledby="fee-heading">
-            <div className="input-section__heading">
-              <p className="eyebrow">すべての基準で使用</p>
-              <h4 id="fee-heading">現在の会費</h4>
-            </div>
-            <div className="fee-grid">
-              <NumericField
-                id="monthly-fee"
-                label="月会費"
-                value={raw.monthlyFee}
-                onChange={(value) => updateRaw('monthlyFee', value)}
-                unit="円"
-                maxLength={6}
-                error={errors['monthly-fee']}
-                hint="税込で実際に支払っている金額"
-              />
+          <details className="optional-fees" open={optionalFeesOpen}>
+            <summary>必須の追加費用がある場合</summary>
+            <p>入力した費用だけを月額相当へ含めます。</p>
+            <div className="field-grid">
               <NumericField
                 id="monthly-fixed-fee"
                 label="毎月必須の固定費"
@@ -555,135 +318,177 @@ export function Calculator() {
                 maxLength={6}
                 required={false}
                 error={errors['annual-fee']}
-                hint="12分の1を月額相当に加えます"
+                hint="年会費等。なければ空欄"
               />
             </div>
-          </section>
+          </details>
+        </section>
 
-          {raw.criterion === 'per-hour' ? (
+        <section className="form-section" aria-labelledby="benchmark-heading">
+          <div className="form-section__heading form-section__heading--plain">
+            <div>
+              <p className="eyebrow">本人が決める基準</p>
+              <h3 id="benchmark-heading">何と比べて料金を判断しますか</h3>
+            </div>
+          </div>
+          <fieldset
+            className={`option-section ${errors['benchmark-kind'] ? 'option-section--error' : ''}`}
+            aria-describedby={errors['benchmark-kind'] ? 'benchmark-kind-error' : undefined}
+          >
+            <legend className="visually-hidden">料金の判断基準</legend>
+            <p className="field__hint">全国共通の「お得価格」は置きません。自分に合う基準を一つ選びます。</p>
+            <div className="choice-grid">
+              {priceBenchmarkOptions.map((option, index) => (
+                <ChoiceOption
+                  key={option.id}
+                  id={index === 0 ? 'benchmark-kind' : `benchmark-kind-${option.id}`}
+                  name="benchmark-kind"
+                  value={option.id}
+                  checked={raw.benchmarkKind === option.id}
+                  label={option.label}
+                  description={option.description}
+                  onChange={() => changeBenchmark(option.id)}
+                />
+              ))}
+            </div>
+            {errors['benchmark-kind'] ? <p className="field__error" id="benchmark-kind-error">{errors['benchmark-kind']}</p> : null}
+          </fieldset>
+
+          {raw.benchmarkKind === 'monthly-limit' ? (
+            <div className="nested-input">
+              <NumericField
+                id="monthly-limit"
+                label="納得できる月額上限"
+                value={raw.monthlyLimit}
+                onChange={(value) => updateRaw('monthlyLimit', value)}
+                unit="円／月"
+                maxLength={6}
+                error={errors['monthly-limit']}
+                hint="家計や優先順位から、自分で決めた上限"
+              />
+            </div>
+          ) : null}
+
+          {raw.benchmarkKind === 'per-visit-limit' ? (
             <>
-              <TimeFields
+              <div className="nested-input">
+                <NumericField
+                  id="per-visit-limit"
+                  label="納得できる1回あたり上限"
+                  value={raw.perVisitLimit}
+                  onChange={(value) => updateRaw('perVisitLimit', value)}
+                  unit="円／回"
+                  maxLength={6}
+                  error={errors['per-visit-limit']}
+                  hint="1回の利用に払ってよいと自分で思う上限"
+                />
+              </div>
+              <VisitFields
                 raw={raw}
                 errors={errors}
-                allowTotal
-                onModeChange={changeTimeMode}
-                onTotalChange={(value) => updateRaw('totalHours', value)}
-                onAverageChange={(value) => updateRaw('averageMinutes', value)}
+                onModeChange={changeVisitMode}
+                onBandChange={(band) => updateRaw('visitBand', band)}
+                onExactChange={(value) => updateRaw('exactVisits', value)}
                 clearError={clearError}
               />
-              {showsVisitFields ? (
-                <VisitFields
-                  raw={raw}
-                  errors={errors}
-                  onModeChange={changeVisitMode}
-                  onBandChange={(band) => updateRaw('visitBand', band)}
-                  onExactChange={(value) => updateRaw('exactVisits', value)}
-                  clearError={clearError}
-                />
-              ) : null}
             </>
           ) : null}
 
-          {raw.criterion !== 'per-hour' && showsVisitFields ? (
-            <VisitFields
-              raw={raw}
-              errors={errors}
-              onModeChange={changeVisitMode}
-              onBandChange={(band) => updateRaw('visitBand', band)}
-              onExactChange={(value) => updateRaw('exactVisits', value)}
-              clearError={clearError}
-            />
+          {raw.benchmarkKind === 'alternative-monthly' ? (
+            <div className="nested-input">
+              <NumericField
+                id="alternative-monthly"
+                label="実在する代替案の月額相当"
+                value={raw.alternativeMonthly}
+                onChange={(value) => updateRaw('alternativeMonthly', value)}
+                unit="円／月"
+                maxLength={6}
+                error={errors['alternative-monthly']}
+                hint="確認できた必須費用を含む候補1件。サービス内容の同等性は判定しません"
+              />
+            </div>
           ) : null}
+        </section>
 
-          {raw.criterion === 'all' ? (
-            <section className="input-section" aria-labelledby="optional-time-heading">
-              <div className="input-section__heading">
-                <p className="eyebrow">任意</p>
-                <h4 id="optional-time-heading">滞在時間も確認する</h4>
-              </div>
-              <label className="check-control check-control--card check-control--wide">
-                <input
-                  type="checkbox"
-                  checked={raw.includeTime}
-                  onChange={(event) => {
-                    const includeTime = event.target.checked;
-                    setRaw((current) => ({
-                      ...current,
-                      includeTime,
-                      timeMode: includeTime && current.visitMode !== 'exact'
-                        ? 'average'
-                        : current.timeMode,
-                    }));
-                    clearErrors(['time-mode', 'total-hours', 'average-minutes']);
-                  }}
-                />
-                <span>1時間あたりも表示する</span>
-              </label>
-              {raw.includeTime ? (
-                <TimeFields
-                  raw={raw}
-                  errors={errors}
-                  allowTotal={raw.visitMode === 'exact'}
-                  onModeChange={changeTimeMode}
-                  onTotalChange={(value) => updateRaw('totalHours', value)}
-                  onAverageChange={(value) => updateRaw('averageMinutes', value)}
-                  clearError={clearError}
-                />
-              ) : null}
-            </section>
-          ) : null}
-
-          {showsServices ? (
-            <ServiceFields
-              raw={raw}
-              errors={errors}
-              onUsedToggle={toggleUsedService}
-              onFrequencyChange={(serviceId, frequency) => {
-                setRaw((current) => ({
-                  ...current,
-                  usedServices: { ...current.usedServices, [serviceId]: frequency },
-                }));
-              }}
-              onImportantToggle={(serviceId, checked) => {
-                setRaw((current) => ({
-                  ...current,
-                  importantServices: toggleListValue(current.importantServices, serviceId, checked),
-                }));
-              }}
-              clearError={clearError}
-            />
-          ) : null}
-
-          {showsContinuation ? (
-            <ContinuationFields
-              raw={raw}
-              onToggle={(id, checked) => {
-                setRaw((current) => ({
-                  ...current,
-                  continuation: toggleListValue(current.continuation, id, checked),
-                }));
-              }}
-            />
-          ) : null}
-
-          <div className="form-actions">
-            <button className="button button--secondary" type="button" onClick={changeCriterion}>戻る</button>
-            <button className="button button--primary" type="submit">自分の会費の見え方を見る</button>
+        <section className="form-section" aria-labelledby="value-heading">
+          <div className="form-section__heading">
+            <span className="step-number" aria-hidden="true">2</span>
+            <div>
+              <p className="eyebrow">利用価値</p>
+              <h3 id="value-heading">通う目的を実現できていますか</h3>
+            </div>
           </div>
-        </form>
-      ) : null}
 
-      {step === 'result' && result ? (
-        <>
-          <p className="sr-only" aria-live="polite">基準別の結果を表示しました。</p>
-          <ResultSummary
-            result={result}
-            headingRef={resultHeadingRef}
-            onEdit={editInputs}
-            onChangeCriterion={changeCriterion}
-          />
-        </>
-      ) : null}
+          <fieldset
+            className={`option-section ${errors.purpose ? 'option-section--error' : ''}`}
+            aria-describedby={errors.purpose ? 'purpose-error' : undefined}
+          >
+            <legend>主な入会目的</legend>
+            <p className="field__hint">最も大きい目的を一つ選びます。目的の種類に優劣は付けません。</p>
+            <div className="choice-grid choice-grid--purpose">
+              {purposeOptions.map((option, index) => (
+                <ChoiceOption
+                  key={option.id}
+                  id={index === 0 ? 'purpose' : `purpose-${option.id}`}
+                  name="purpose"
+                  value={option.id}
+                  checked={raw.purpose === option.id}
+                  label={option.label}
+                  onChange={() => updateRaw('purpose', option.id as PurposeId)}
+                />
+              ))}
+            </div>
+            {errors.purpose ? <p className="field__error" id="purpose-error">{errors.purpose}</p> : null}
+          </fieldset>
+
+          <fieldset
+            className={`option-section ${errors['purpose-progress'] ? 'option-section--error' : ''}`}
+            aria-describedby={errors['purpose-progress'] ? 'purpose-progress-error' : undefined}
+          >
+            <legend>先月、その目的を実現できましたか</legend>
+            <div className="choice-grid choice-grid--four">
+              {purposeProgressOptions.map((option, index) => (
+                <ChoiceOption
+                  key={option.id}
+                  id={index === 0 ? 'purpose-progress' : `purpose-progress-${option.id}`}
+                  name="purpose-progress"
+                  value={option.id}
+                  checked={raw.purposeProgress === option.id}
+                  label={option.label}
+                  onChange={() => updateRaw('purposeProgress', option.id as PurposeProgress)}
+                />
+              ))}
+            </div>
+            {errors['purpose-progress'] ? <p className="field__error" id="purpose-progress-error">{errors['purpose-progress']}</p> : null}
+          </fieldset>
+
+          <fieldset
+            className={`option-section ${errors.replaceability ? 'option-section--error' : ''}`}
+            aria-describedby={errors.replaceability ? 'replaceability-error' : undefined}
+          >
+            <legend>同じ目的を、今のジム以外で代替できますか</legend>
+            <div className="choice-grid choice-grid--four">
+              {replaceabilityOptions.map((option, index) => (
+                <ChoiceOption
+                  key={option.id}
+                  id={index === 0 ? 'replaceability' : `replaceability-${option.id}`}
+                  name="replaceability"
+                  value={option.id}
+                  checked={raw.replaceability === option.id}
+                  label={option.label}
+                  onChange={() => updateRaw('replaceability', option.id as Replaceability)}
+                />
+              ))}
+            </div>
+            {errors.replaceability ? <p className="field__error" id="replaceability-error">{errors.replaceability}</p> : null}
+          </fieldset>
+        </section>
+
+        <div className="form-submit">
+          <p>入力はこの画面内だけで計算し、保存・送信しません。</p>
+          <button className="button button--primary button--full" type="submit">2つの軸で判定する</button>
+        </div>
+      </form>
     </section>
   );
 }

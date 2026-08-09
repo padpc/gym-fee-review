@@ -1,114 +1,144 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { Calculator } from './Calculator';
 
-async function chooseCriterion(
-  user: ReturnType<typeof userEvent.setup>,
-  label: string,
-) {
-  await user.click(screen.getByRole('radio', { name: label }));
-  await user.click(screen.getByRole('button', { name: 'この基準で入力へ' }));
+async function fillCommonValueInputs(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('radio', { name: '運動習慣を保つ場所' }));
+  await user.click(screen.getByRole('radio', { name: 'できた' }));
+  await user.click(screen.getByRole('radio', { name: '代替しにくい' }));
 }
 
-describe('G1改訂 Calculator', () => {
-  it('回数不明でもシナリオ表まで完了する', async () => {
+describe('GFR-G1R2 Calculator', () => {
+  it('本人の月額上限と強い利用価値を2軸で判定する', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
 
-    await chooseCriterion(user, '1回あたり料金で見る');
-    await user.type(screen.getByLabelText(/^月会費/), '8000');
-    await user.click(screen.getByRole('radio', { name: '分からない（回数別の目安を見る）' }));
-    await user.click(screen.getByRole('button', { name: '自分の会費の見え方を見る' }));
+    await user.type(screen.getByRole('textbox', { name: /^月会費/ }), '8000');
+    await user.click(screen.getByRole('radio', { name: '月会費は月いくらまでなら納得できるか' }));
+    await user.type(screen.getByRole('textbox', { name: /^納得できる月額上限/ }), '9000');
+    await fillCommonValueInputs(user);
+    await user.click(screen.getByRole('button', { name: '2つの軸で判定する' }));
 
-    expect(await screen.findByRole('heading', { name: '会費の見え方' })).toHaveFocus();
-    expect(screen.getByText('回数不明')).toBeInTheDocument();
-    expect(screen.getByText('実績ではありません。回数別の目安です。')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '会費の見直し結果' })).toHaveFocus();
+    expect(screen.getByRole('heading', { name: 'あなたの基準では、料金にも利用価値にも納得しやすい状態です' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '料金の判定' }).parentElement).toHaveTextContent('あなたの基準内');
+    expect(screen.getByRole('heading', { name: '月額相当に含めた費用' }).parentElement).toHaveTextContent('月会費8,000円');
+    expect(screen.getByRole('heading', { name: '月額相当に含めた費用' }).parentElement).toHaveTextContent('年会費0円／年');
+    expect(screen.getByRole('heading', { name: '利用価値の判定' }).parentElement).toHaveTextContent('通う価値の根拠が強い');
+    expect(document.body).not.toHaveTextContent('総合得点');
+  });
+
+  it('0回を1回単価の超過と誤説明せず、未利用月の支払額を示す', async () => {
+    const user = userEvent.setup();
+    render(<Calculator />);
+
+    await user.type(screen.getByRole('textbox', { name: /^月会費/ }), '8000');
+    await user.click(screen.getByRole('radio', { name: '1回あたりいくらまでなら納得できるか' }));
+    await user.type(screen.getByRole('textbox', { name: /^納得できる1回あたり上限/ }), '2000');
+    const visitGroup = screen.getByRole('group', { name: '先月の回数は分かりますか' });
+    await user.click(within(visitGroup).getByRole('radio', { name: '回数が分かる' }));
+    await user.type(screen.getByRole('textbox', { name: /^先月の来館回数/ }), '0');
+    await fillCommonValueInputs(user);
+    await user.click(screen.getByRole('button', { name: '2つの軸で判定する' }));
+
+    const priceCard = screen.getByRole('heading', { name: '料金の判定' }).parentElement;
+    expect(priceCard).toHaveTextContent('先月は0回で1回あたりを算出できず、本人上限を満たす利用実績ではありません');
+    expect(priceCard).toHaveTextContent('未利用月の月額相当は8,000円');
+  });
+
+  it('1円未満の丸め前差を隠さず費用内訳とともに示す', async () => {
+    const user = userEvent.setup();
+    render(<Calculator />);
+
+    await user.type(screen.getByRole('textbox', { name: /^月会費/ }), '0');
+    await user.click(screen.getByText('必須の追加費用がある場合'));
+    await user.type(screen.getByRole('textbox', { name: /^年会費/ }), '1');
+    await user.click(screen.getByRole('radio', { name: '月会費は月いくらまでなら納得できるか' }));
+    await user.type(screen.getByRole('textbox', { name: /^納得できる月額上限/ }), '0');
+    await fillCommonValueInputs(user);
+    await user.click(screen.getByRole('button', { name: '2つの軸で判定する' }));
+
+    const priceCard = screen.getByRole('heading', { name: '料金の判定' }).parentElement;
+    expect(priceCard).toHaveTextContent('月額上限との差：1円未満');
+    expect(priceCard).toHaveTextContent('表示上は同じ円額ですが、判定は丸め前の値で行っています');
+    expect(priceCard).toHaveTextContent('年会費1円／年（12分の1を加算）');
+  });
+
+  it('実在代替案より高く、利用価値が弱い状態を隠さない', async () => {
+    const user = userEvent.setup();
+    render(<Calculator />);
+
+    await user.type(screen.getByRole('textbox', { name: /^月会費/ }), '8000');
+    await user.click(screen.getByRole('radio', { name: '実際に検討できる代替案はいくらか' }));
+    await user.type(screen.getByRole('textbox', { name: /^実在する代替案の月額相当/ }), '7000');
+    await user.click(screen.getByRole('radio', { name: '風呂・サウナ' }));
+    await user.click(screen.getByRole('radio', { name: 'ほとんどできなかった' }));
+    await user.click(screen.getByRole('radio', { name: '代替しやすい' }));
+    await user.click(screen.getByRole('button', { name: '2つの軸で判定する' }));
+
+    expect(await screen.findByRole('heading', { name: '料金は基準を超え、この入力では通う価値の根拠も弱い状態です' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '料金の判定' }).parentElement).toHaveTextContent('入力した代替案の方が低い');
+    expect(screen.getByRole('heading', { name: '利用価値の判定' }).parentElement).toHaveTextContent('通う価値の根拠が弱い');
+  });
+
+  it('回数不明でも必要回数とシナリオを示し、料金だけ確定不能にする', async () => {
+    const user = userEvent.setup();
+    render(<Calculator />);
+
+    await user.type(screen.getByRole('textbox', { name: /^月会費/ }), '8000');
+    await user.click(screen.getByRole('radio', { name: '1回あたりいくらまでなら納得できるか' }));
+    await user.type(screen.getByRole('textbox', { name: /^納得できる1回あたり上限/ }), '1000');
+    const visitGroup = screen.getByRole('group', { name: '先月の回数は分かりますか' });
+    await user.click(within(visitGroup).getByRole('radio', { name: '分からない' }));
+    await fillCommonValueInputs(user);
+    await user.click(screen.getByRole('button', { name: '2つの軸で判定する' }));
+
+    expect(await screen.findByRole('heading', { name: /料金は判断材料が不足しています。通う価値の根拠は強い状態です/ })).toBeInTheDocument();
+    expect(screen.getByText('料金上は月8回で、1回上限以下になる計算です')).toBeInTheDocument();
+    expect(screen.getByText(/その回数まで来館するよう勧めるものではありません/)).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /月0回 算出不可/ })).toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /月6回 1,333円/ })).toBeInTheDocument();
-    expect(document.body).not.toHaveTextContent('都度払い');
+    expect(screen.getByRole('row', { name: /月20回 400円/ })).toBeInTheDocument();
   });
 
-  it('設備だけなら回数を要求せず、利用と重要性を分ける', async () => {
+  it('空欄をまとめ、最初の不正項目へフォーカスする', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
 
-    await chooseCriterion(user, '使った設備・プログラムで見る');
-    expect(screen.queryByRole('group', { name: '回数の分かり方' })).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText(/^月会費/), '8000');
-    await user.click(screen.getByRole('checkbox', { name: 'プールを使った' }));
-    await user.selectOptions(screen.getByLabelText('プールの利用頻度'), '1-3');
-    await user.click(screen.getByRole('checkbox', { name: 'プールは会費を払う理由として重要' }));
-    await user.click(
-      screen.getByRole('checkbox', { name: 'スタジオ・グループレッスンは会費を払う理由として重要' }),
-    );
-    await user.click(screen.getByRole('button', { name: '自分の会費の見え方を見る' }));
-
-    expect(await screen.findByRole('heading', { name: '会費の見え方' })).toHaveFocus();
-    expect(screen.getByRole('heading', { name: 'そのひと月に使ったもの' })).toBeInTheDocument();
-    expect(screen.getByText('プール：1～3回')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '会費を払う理由として重要なもの' })).toBeInTheDocument();
-    expect(screen.getByText('重要だが、そのひと月は使っていないもの')).toBeInTheDocument();
-    expect(screen.getAllByText('スタジオ・グループレッスン').length).toBeGreaterThan(0);
-    expect(screen.queryByText(/1回あたり/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '2つの軸で判定する' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('5件の入力を確認してください');
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /^月会費/ })).toHaveFocus());
   });
 
-  it('合計滞在時間なら回数なしで1時間単価を確認できる', async () => {
+  it('基準変更で非表示になった回数エラーを残さない', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
 
-    await chooseCriterion(user, '1時間あたり料金で見る');
-    await user.type(screen.getByLabelText(/^月会費/), '8000');
-    await user.click(screen.getByRole('radio', { name: '先月の合計滞在時間' }));
-    expect(screen.queryByRole('group', { name: '回数の分かり方' })).not.toBeInTheDocument();
-    await user.type(screen.getByRole('textbox', { name: /^先月の合計滞在時間/ }), '6.0');
-    await user.click(screen.getByRole('button', { name: '自分の会費の見え方を見る' }));
+    await user.type(screen.getByRole('textbox', { name: /^月会費/ }), '8000');
+    await user.click(screen.getByRole('radio', { name: '1回あたりいくらまでなら納得できるか' }));
+    await user.type(screen.getByRole('textbox', { name: /^納得できる1回あたり上限/ }), '1000');
+    await fillCommonValueInputs(user);
+    await user.click(screen.getByRole('button', { name: '2つの軸で判定する' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('回数の分かり方を選んでください');
 
-    expect(await screen.findByText('約1,333円／時間')).toBeInTheDocument();
-    expect(screen.getByText(/滞在時間であり、運動時間や健康効果の評価ではありません/)).toBeInTheDocument();
-  });
-
-  it('まとめて確認では時間と設備を省略でき、総合判定を出さない', async () => {
-    const user = userEvent.setup();
-    render(<Calculator />);
-
-    await chooseCriterion(user, 'まとめて見る');
-    await user.type(screen.getByLabelText(/^月会費/), '8000');
-    await user.click(screen.getByRole('radio', { name: 'だいたいの頻度なら分かる' }));
-    await user.click(screen.getByRole('radio', { name: '週1回前後（月4～6回）' }));
-    await user.click(screen.getByRole('button', { name: '自分の会費の見え方を見る' }));
-
-    expect(await screen.findByText('約1,333～2,000円／回')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '1時間あたり' })).not.toBeInTheDocument();
-    for (const text of ['総合得点', 'お得', '損', '退会すべき']) {
-      expect(document.body).not.toHaveTextContent(text);
-    }
-  });
-
-  it('入力エラーをまとめ、最初の項目へフォーカスする', async () => {
-    const user = userEvent.setup();
-    render(<Calculator />);
-
-    await chooseCriterion(user, '1回あたり料金で見る');
-    await user.click(screen.getByRole('button', { name: '自分の会費の見え方を見る' }));
-
-    expect(screen.getByRole('alert')).toHaveTextContent('2件の入力を確認してください');
-    await waitFor(() => expect(screen.getByLabelText(/^月会費/)).toHaveFocus());
-  });
-
-  it('入力方式を変えたら非表示になった項目のエラーを残さない', async () => {
-    const user = userEvent.setup();
-    render(<Calculator />);
-
-    await chooseCriterion(user, '1回あたり料金で見る');
-    await user.type(screen.getByLabelText(/^月会費/), '8000');
-    await user.click(screen.getByRole('radio', { name: '先月の回数が分かる' }));
-    await user.click(screen.getByRole('button', { name: '自分の会費の見え方を見る' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('先月の来館回数を入力してください');
-
-    await user.click(screen.getByRole('radio', { name: '分からない（回数別の目安を見る）' }));
+    await user.click(screen.getByRole('radio', { name: '月会費は月いくらまでなら納得できるか' }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '自分の会費の見え方を見る' }));
-    expect(await screen.findByText('回数不明')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '先月の回数は分かりますか' })).not.toBeInTheDocument();
+  });
+
+  it('結果から戻ると入力値を保持し、入力見出しへフォーカスする', async () => {
+    const user = userEvent.setup();
+    render(<Calculator />);
+
+    await user.type(screen.getByRole('textbox', { name: /^月会費/ }), '8000');
+    await user.click(screen.getByRole('radio', { name: '月会費は月いくらまでなら納得できるか' }));
+    await user.type(screen.getByRole('textbox', { name: /^納得できる月額上限/ }), '9000');
+    await fillCommonValueInputs(user);
+    await user.click(screen.getByRole('button', { name: '2つの軸で判定する' }));
+    await user.click(await screen.findByRole('button', { name: '入力を修正' }));
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: '料金と利用価値を入力' })).toHaveFocus());
+    expect(screen.getByRole('textbox', { name: /^月会費/ })).toHaveValue('8000');
+    expect(screen.getByRole('radio', { name: '月会費は月いくらまでなら納得できるか' })).toBeChecked();
   });
 });

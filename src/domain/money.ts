@@ -31,10 +31,3 @@ export function perVisitRoundedYen(totalUnits: number, visits: number): number |
 
   return roundRatioHalfUp(totalUnits, UNITS_PER_YEN * visits);
 }
-
-export function perHourRoundedYen(monthlyUnits: number, totalMinutes: number): number | null {
-  assertNonNegativeSafeInteger(monthlyUnits, 'monthlyUnits');
-  assertNonNegativeSafeInteger(totalMinutes, 'totalMinutes');
-  if (totalMinutes === 0) return null;
-  return roundRatioHalfUp(monthlyUnits * 5, totalMinutes);
-}
