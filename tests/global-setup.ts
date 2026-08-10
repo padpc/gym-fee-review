@@ -27,9 +27,17 @@ export default async function globalSetup() {
         return;
       }
 
-      const body = await readFile(filePath);
+      let body: Buffer;
+      let responsePath = filePath;
+      try {
+        body = await readFile(filePath);
+      } catch (error) {
+        if (extname(decodedPath) !== '') throw error;
+        responsePath = resolve(distDirectory, 'index.html');
+        body = await readFile(responsePath);
+      }
       response.writeHead(200, {
-        'Content-Type': contentTypes[extname(filePath)] ?? 'application/octet-stream',
+        'Content-Type': contentTypes[extname(responsePath)] ?? 'application/octet-stream',
         'Cache-Control': 'no-store',
       });
       response.end(body);

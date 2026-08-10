@@ -1,4 +1,9 @@
-import { perVisitRoundedYen, unitsToRoundedYen, yenToUnits } from './money';
+import {
+  perVisitRoundedYen,
+  roundRatioHalfUp,
+  unitsToRoundedYen,
+  yenToUnits,
+} from './money';
 
 export type VisitMode = 'exact' | 'range' | 'unknown';
 
@@ -16,10 +21,8 @@ export type VisitBandId = (typeof visitBandOptions)[number]['id'];
 export type VisitKnowledge =
   | { kind: 'exact'; visits: number }
   | { kind: 'bounded'; bandId: VisitBandId; min: number; max: number }
-  | { kind: 'at-least'; bandId: 'monthly-21-plus'; min: 21 }
+  | { kind: 'at-least'; bandId: 'monthly-21-plus'; min: number }
   | { kind: 'unknown' };
-
-export const unknownVisitScenarios = [0, 1, 2, 4, 6, 8, 10, 12, 16, 20] as const;
 
 export interface FeeValues {
   monthlyFeeYen: number;
@@ -32,63 +35,16 @@ export interface MonthlyEquivalent {
   roundedYen: number;
 }
 
-export type PriceBenchmarkKind = 'monthly-limit' | 'per-visit-limit' | 'alternative-monthly';
+export type TimeInput =
+  | { kind: 'total-hours'; totalHours: number }
+  | { kind: 'average-minutes'; averageMinutes: number }
+  | { kind: 'unknown' };
 
-export type PriceBenchmark =
-  | { kind: 'monthly-limit'; amountYen: number }
-  | { kind: 'per-visit-limit'; amountYen: number }
-  | { kind: 'alternative-monthly'; amountYen: number };
-
-export const priceBenchmarkOptions: ReadonlyArray<{
-  id: PriceBenchmarkKind;
-  label: string;
-  description: string;
-}> = [
-  {
-    id: 'monthly-limit',
-    label: '月会費は月いくらまでなら納得できるか',
-    description: '自分の家計や優先順位から決めた月額上限と比べます',
-  },
-  {
-    id: 'per-visit-limit',
-    label: '1回あたりいくらまでなら納得できるか',
-    description: '先月の回数または頻度範囲から本人の上限と比べます',
-  },
-  {
-    id: 'alternative-monthly',
-    label: '実際に検討できる代替案はいくらか',
-    description: '候補にできる別プランや別施設の月額相当と比べます',
-  },
-];
-
-export const purposeOptions = [
-  { id: 'strength-training', label: 'マシン・筋力トレーニング' },
-  { id: 'classes', label: 'スタジオ・グループレッスン' },
-  { id: 'pool', label: 'プール' },
-  { id: 'bath-sauna', label: '風呂・サウナ' },
-  { id: 'support', label: 'トレーナー・スタッフの支援' },
-  { id: 'convenience', label: '24時間・複数店舗・通いやすさ' },
-  { id: 'exercise-habit', label: '運動習慣を保つ場所' },
-  { id: 'other', label: 'その他' },
-] as const;
-
-export type PurposeId = (typeof purposeOptions)[number]['id'];
-export type PurposeProgress = 'achieved' | 'partly' | 'hardly' | 'unknown';
-export type Replaceability = 'hard' | 'possible' | 'easy' | 'unknown';
-
-export const purposeProgressOptions: ReadonlyArray<{ id: PurposeProgress; label: string }> = [
-  { id: 'achieved', label: 'できた' },
-  { id: 'partly', label: '一部できた' },
-  { id: 'hardly', label: 'ほとんどできなかった' },
-  { id: 'unknown', label: '分からない' },
-];
-
-export const replaceabilityOptions: ReadonlyArray<{ id: Replaceability; label: string }> = [
-  { id: 'hard', label: '代替しにくい' },
-  { id: 'possible', label: '代替できるが手間がある' },
-  { id: 'easy', label: '代替しやすい' },
-  { id: 'unknown', label: '分からない' },
-];
+export type MonthlyDuration =
+  | { kind: 'exact'; minutes: number }
+  | { kind: 'bounded'; minMinutes: number; maxMinutes: number }
+  | { kind: 'at-least'; minMinutes: number }
+  | { kind: 'unknown' };
 
 export type PerVisitResult =
   | { kind: 'exact'; visits: number; yenPerVisit: number | null; unusedPaymentYen: number }
@@ -100,62 +56,269 @@ export type PerVisitResult =
       minYenPerVisit: number;
       maxYenPerVisit: number;
     }
-  | { kind: 'at-least'; bandId: 'monthly-21-plus'; minVisits: 21; maxYenPerVisit: number }
+  | { kind: 'at-least'; bandId: 'monthly-21-plus'; minVisits: number; maxYenPerVisit: number }
+  | { kind: 'unknown' };
+
+export type PerHourResult =
+  | { kind: 'exact'; minutes: number; yenPerHour: number | null }
+  | {
+      kind: 'bounded';
+      minMinutes: number;
+      maxMinutes: number;
+      minYenPerHour: number;
+      maxYenPerHour: number;
+    }
+  | { kind: 'at-least'; minMinutes: number; maxYenPerHour: number }
+  | { kind: 'unknown' };
+
+export const purposeOptions = [
+  { id: 'strength', label: '筋力を高める' },
+  { id: 'weight-shape', label: '減量・体型を整える' },
+  { id: 'endurance', label: '体力を高める' },
+  { id: 'health', label: '健康維持・運動習慣' },
+  { id: 'stress', label: 'ストレス解消・気分転換' },
+  { id: 'program-amenity', label: 'クラス・プール・温浴等を利用する' },
+] as const;
+
+export type PurposeId = (typeof purposeOptions)[number]['id'];
+export type CountKnowledge = { kind: 'exact'; count: number } | { kind: 'unknown' };
+export type PurposeEvidence = 'improved' | 'unchanged' | 'worse' | 'unknown';
+
+export const purposeEvidenceOptions: ReadonlyArray<{ id: PurposeEvidence; label: string }> = [
+  { id: 'improved', label: '目的に沿う良い変化・利用があった' },
+  { id: 'unchanged', label: '期待した変化・利用を確認できなかった' },
+  { id: 'worse', label: '望んだ方向とは逆だった' },
+  { id: 'unknown', label: '判断できない' },
+];
+
+export interface PurposeAssessmentInput {
+  purpose: PurposeId;
+  planned: CountKnowledge;
+  achieved: CountKnowledge;
+  evidence: PurposeEvidence;
+}
+
+export type PlanAchievement =
+  | {
+      kind: 'known';
+      plannedCount: number;
+      achievedCount: number;
+      percent: number;
+      isAtLeastPlan: boolean;
+      remainingCount: number;
+    }
   | {
       kind: 'unknown';
-      rows: Array<{ visits: number; yenPerVisit: number | null; unusedPaymentYen: number | null }>;
+      reason: 'planned-unknown' | 'achieved-unknown' | 'both-unknown';
     };
 
-export type PriceStatus = 'within' | 'over' | 'mixed' | 'insufficient';
-export type DifferenceDirection = 'within-by' | 'over-by' | 'equal';
+export interface PurposeAssessment {
+  purpose: PurposeId;
+  purposeLabel: string;
+  planned: CountKnowledge;
+  achieved: CountKnowledge;
+  evidence: PurposeEvidence;
+  planAchievement: PlanAchievement;
+  yenPerAchievedVisit: number | null;
+  achievedCostStatus: 'known' | 'zero-achieved' | 'unknown';
+}
+
+export const barrierOptions = [
+  { id: 'none', label: '特にない' },
+  { id: 'schedule', label: '時間を確保できなかった' },
+  { id: 'travel', label: '移動が負担だった' },
+  { id: 'crowding', label: '混雑していた' },
+  { id: 'reservation', label: '予約を取りにくかった' },
+  { id: 'equipment', label: '必要な設備を使えなかった' },
+  { id: 'cleanliness', label: '故障・清潔さが気になった' },
+  { id: 'enjoyment', label: '楽しさ・継続意欲が下がった' },
+  { id: 'other', label: 'その他' },
+  { id: 'unknown', label: '分からない' },
+] as const;
+
+export type BarrierId = (typeof barrierOptions)[number]['id'];
+
+export type EquivalenceAnswer = 'meets' | 'does-not-meet' | 'unknown' | 'not-required';
+
+export interface AlternativeEquivalence {
+  equipment: EquivalenceAnswer;
+  hours: EquivalenceAnswer;
+  location: EquivalenceAnswer;
+}
+
+export type EquivalenceDimension = keyof AlternativeEquivalence;
+export type EquivalenceStatus = 'equivalent' | 'not-equivalent' | 'unknown';
+
+interface AlternativeSharedValues {
+  name: string;
+  monthlyFixedFeeYen: number;
+  annualFeeYen: number;
+  requiredServiceMonthlyYen: number;
+  equivalence: AlternativeEquivalence;
+}
+
+export type KnownAlternative = AlternativeSharedValues & {
+  availability: 'known';
+  pricing:
+    | { kind: 'monthly'; monthlyFeeYen: number }
+    | { kind: 'per-visit'; perVisitFeeYen: number };
+};
+
+export type AlternativeInput = { availability: 'unknown' } | KnownAlternative;
+
+export type AlternativeMonthlyCost =
+  | { kind: 'exact'; units: number; roundedYen: number }
+  | {
+      kind: 'bounded';
+      minUnits: number;
+      maxUnits: number;
+      minRoundedYen: number;
+      maxRoundedYen: number;
+    }
+  | { kind: 'at-least'; minUnits: number; minRoundedYen: number }
+  | { kind: 'unknown' };
+
+export type RatioResult =
+  | { kind: 'exact'; percent: number }
+  | { kind: 'bounded'; minPercent: number; maxPercent: number }
+  | { kind: 'at-least'; minPercent: number }
+  | { kind: 'unknown' };
+
+/**
+ * 代替費用 - 現在費用。正なら現在の方が低く、負なら代替の方が低い。
+ * 年額差は1/12円単位の月差を12倍した値なので、unitsと同じ整数円になる。
+ */
+export type DifferenceResult =
+  | { kind: 'exact'; units: number; roundedYen: number; annualYen: number }
+  | {
+      kind: 'bounded';
+      minUnits: number;
+      maxUnits: number;
+      minRoundedYen: number;
+      maxRoundedYen: number;
+      minAnnualYen: number;
+      maxAnnualYen: number;
+    }
+  | {
+      kind: 'at-least';
+      minUnits: number;
+      minRoundedYen: number;
+      minAnnualYen: number;
+    }
+  | { kind: 'unknown' };
+
+export type PriceStatus =
+  | 'current-lower'
+  | 'equal'
+  | 'alternative-lower'
+  | 'depends-on-visits'
+  | 'not-equivalent'
+  | 'equivalence-unknown'
+  | 'insufficient';
+
+export interface PurePerVisitBreakEven {
+  equalityVisits: number;
+  firstVisitCurrentNoMoreExpensive: number;
+  firstVisitCurrentStrictlyCheaper: number;
+}
 
 export interface PriceAssessment {
   status: PriceStatus;
-  monthly: MonthlyEquivalent & { fees: FeeValues };
-  benchmark: PriceBenchmark;
-  difference: { direction: DifferenceDirection; amountUnits: number; amountYen: number } | null;
-  requiredVisits: number | null;
-  perVisit: PerVisitResult | null;
+  insufficientReason: 'alternative-unknown' | 'visits-unknown' | null;
+  current: MonthlyEquivalent & { fees: FeeValues };
+  alternative: AlternativeInput;
+  equivalenceStatus: EquivalenceStatus | null;
+  failedEquivalence: EquivalenceDimension[];
+  uncertainEquivalence: EquivalenceDimension[];
+  alternativeMonthly: AlternativeMonthlyCost | null;
+  alternativeValueRatio: RatioResult | null;
+  difference: DifferenceResult | null;
+  samePricePerVisit: PerVisitResult;
+  purePerVisitBreakEven: PurePerVisitBreakEven | null;
   hasRoundedBoundaryDifference: boolean;
 }
 
-export type ValueStatus = 'strong' | 'mixed' | 'weak' | 'insufficient';
+export type PrimaryRecommendationKind =
+  | 'keep-current-candidate'
+  | 'review-barrier-and-recheck'
+  | 'compare-lower-plan'
+  | 'compare-plan-and-usage'
+  | 'check-official-plan'
+  | 'confirm-materials';
 
-export interface ValueAssessment {
-  status: ValueStatus;
-  purpose: PurposeId;
-  purposeLabel: string;
-  progress: PurposeProgress;
-  replaceability: Replaceability;
-}
-
-export type OverallKind =
-  | 'both-supported'
-  | 'value-review'
-  | 'price-review-value-strong'
-  | 'price-review'
-  | 'both-review'
-  | 'inconclusive';
-
-export interface OverallAssessment {
-  kind: OverallKind;
+export interface PrimaryRecommendation {
+  kind: PrimaryRecommendationKind;
   headline: string;
+  barrier: BarrierId;
+  nextStep: string;
+  supplementalContractReview: boolean;
 }
+
+const barrierNextSteps: Record<BarrierId, string> = {
+  none: '次の1か月も同じ予定回数を記録し、今回の結果を再確認する',
+  schedule: '利用する曜日と時間を1枠だけ先に予定へ入れる',
+  travel: '生活動線上で通える店舗・プランを1件だけ比較する',
+  crowding: '混雑を避けられる時間帯を店舗の公式情報で確認する',
+  reservation: '予約開始時刻とキャンセル条件を確認し、利用枠を先に確保する',
+  equipment: '目的に必要な設備を使える時間帯・店舗を確認する',
+  cleanliness: '故障や清潔さの改善予定を店舗へ確認する',
+  enjoyment: '続けやすい運動やプログラムを1種類だけ試す',
+  other: '妨げた要因を一つメモし、次回の比較条件に加える',
+  unknown: '利用しなかった日の理由を1週間だけ記録し、主な妨げを確認する',
+};
 
 export interface ValidatedAssessmentInput {
   fees: FeeValues;
-  visits: VisitKnowledge | null;
-  benchmark: PriceBenchmark;
-  purpose: PurposeId;
-  purposeProgress: PurposeProgress;
-  replaceability: Replaceability;
+  visits: VisitKnowledge;
+  time: TimeInput;
+  purpose: PurposeAssessmentInput;
+  barrier: BarrierId;
+  alternative: AlternativeInput;
 }
 
 export interface AssessmentResult {
   input: ValidatedAssessmentInput;
+  monthly: MonthlyEquivalent;
+  duration: MonthlyDuration;
+  perVisit: PerVisitResult;
+  perHour: PerHourResult;
+  purpose: PurposeAssessment;
   price: PriceAssessment;
-  value: ValueAssessment;
-  overall: OverallAssessment;
+  recommendation: PrimaryRecommendation;
+}
+
+function percentageToOneDecimal(numerator: number, denominator: number): number {
+  if (!Number.isSafeInteger(numerator) || numerator < 0) {
+    throw new RangeError('percentage numerator must be a non-negative safe integer.');
+  }
+  if (!Number.isSafeInteger(denominator) || denominator <= 0) {
+    throw new RangeError('percentage denominator must be a positive safe integer.');
+  }
+  return roundRatioHalfUp(numerator * 1_000, denominator) / 10;
+}
+
+function signedUnitsToRoundedYen(units: number): number {
+  if (!Number.isSafeInteger(units)) throw new RangeError('units must be a safe integer.');
+  const rounded = unitsToRoundedYen(Math.abs(units));
+  if (rounded === 0) return 0;
+  return units < 0 ? -rounded : rounded;
+}
+
+function assertTenthHours(hours: number) {
+  if (!Number.isFinite(hours) || hours < 0 || Math.abs(hours * 10 - Math.round(hours * 10)) > 1e-9) {
+    throw new RangeError('totalHours must be a non-negative number in 0.1-hour increments.');
+  }
+}
+
+function perHourRoundedYen(totalUnits: number, minutes: number): number | null {
+  if (!Number.isSafeInteger(totalUnits) || totalUnits < 0) {
+    throw new RangeError('totalUnits must be a non-negative safe integer.');
+  }
+  if (!Number.isSafeInteger(minutes) || minutes < 0) {
+    throw new RangeError('minutes must be a non-negative safe integer.');
+  }
+  if (minutes === 0) return null;
+  return roundRatioHalfUp(totalUnits * 60, 12 * minutes);
 }
 
 export function calculateMonthlyEquivalent(fees: FeeValues): MonthlyEquivalent {
@@ -190,220 +353,430 @@ export function calculatePerVisitResult(monthlyUnits: number, visits: VisitKnowl
       maxYenPerVisit: perVisitRoundedYen(monthlyUnits, visits.min) ?? 0,
     };
   }
-  return {
-    kind: 'unknown',
-    rows: unknownVisitScenarios.map((scenarioVisits) => ({
-      visits: scenarioVisits,
-      yenPerVisit: perVisitRoundedYen(monthlyUnits, scenarioVisits),
-      unusedPaymentYen: scenarioVisits === 0 ? unitsToRoundedYen(monthlyUnits) : null,
-    })),
-  };
+  return { kind: 'unknown' };
 }
 
-function compareMonthlyUnits(monthlyUnits: number, benchmarkUnits: number) {
-  if (monthlyUnits === benchmarkUnits) {
+export function calculateMonthlyDuration(visits: VisitKnowledge, time: TimeInput): MonthlyDuration {
+  if (time.kind === 'unknown') return { kind: 'unknown' };
+  if (time.kind === 'total-hours') {
+    assertTenthHours(time.totalHours);
+    return { kind: 'exact', minutes: Math.round(time.totalHours * 60) };
+  }
+  if (!Number.isSafeInteger(time.averageMinutes) || time.averageMinutes < 0) {
+    throw new RangeError('averageMinutes must be a non-negative safe integer.');
+  }
+  if (visits.kind === 'exact') {
+    return { kind: 'exact', minutes: visits.visits * time.averageMinutes };
+  }
+  if (visits.kind === 'bounded') {
     return {
-      status: 'within' as const,
-      difference: { direction: 'equal' as const, amountUnits: 0, amountYen: 0 },
+      kind: 'bounded',
+      minMinutes: visits.min * time.averageMinutes,
+      maxMinutes: visits.max * time.averageMinutes,
     };
   }
-  const monthlyIsLower = monthlyUnits < benchmarkUnits;
+  if (visits.kind === 'at-least') {
+    return { kind: 'at-least', minMinutes: visits.min * time.averageMinutes };
+  }
+  return { kind: 'unknown' };
+}
+
+export function calculatePerHourResult(monthlyUnits: number, duration: MonthlyDuration): PerHourResult {
+  if (duration.kind === 'exact') {
+    return {
+      kind: 'exact',
+      minutes: duration.minutes,
+      yenPerHour: perHourRoundedYen(monthlyUnits, duration.minutes),
+    };
+  }
+  if (duration.kind === 'bounded') {
+    if (duration.minMinutes === 0) return { kind: 'unknown' };
+    return {
+      kind: 'bounded',
+      minMinutes: duration.minMinutes,
+      maxMinutes: duration.maxMinutes,
+      minYenPerHour: perHourRoundedYen(monthlyUnits, duration.maxMinutes) ?? 0,
+      maxYenPerHour: perHourRoundedYen(monthlyUnits, duration.minMinutes) ?? 0,
+    };
+  }
+  if (duration.kind === 'at-least') {
+    if (duration.minMinutes === 0) return { kind: 'unknown' };
+    return {
+      kind: 'at-least',
+      minMinutes: duration.minMinutes,
+      maxYenPerHour: perHourRoundedYen(monthlyUnits, duration.minMinutes) ?? 0,
+    };
+  }
+  return { kind: 'unknown' };
+}
+
+export function assessPurpose(
+  monthlyUnits: number,
+  input: PurposeAssessmentInput,
+): PurposeAssessment {
+  let planAchievement: PlanAchievement;
+  if (input.planned.kind === 'unknown' || input.achieved.kind === 'unknown') {
+    planAchievement = {
+      kind: 'unknown',
+      reason: input.planned.kind === 'unknown' && input.achieved.kind === 'unknown'
+        ? 'both-unknown'
+        : input.planned.kind === 'unknown'
+          ? 'planned-unknown'
+          : 'achieved-unknown',
+    };
+  } else {
+    if (input.planned.count <= 0) {
+      throw new RangeError('planned count must be positive when known.');
+    }
+    planAchievement = {
+      kind: 'known',
+      plannedCount: input.planned.count,
+      achievedCount: input.achieved.count,
+      percent: percentageToOneDecimal(input.achieved.count, input.planned.count),
+      isAtLeastPlan: input.achieved.count >= input.planned.count,
+      remainingCount: Math.max(0, input.planned.count - input.achieved.count),
+    };
+  }
+
+  const achievedCostStatus = input.achieved.kind === 'unknown'
+    ? 'unknown'
+    : input.achieved.count === 0
+      ? 'zero-achieved'
+      : 'known';
+  const yenPerAchievedVisit = input.achieved.kind === 'exact' && input.achieved.count > 0
+    ? perVisitRoundedYen(monthlyUnits, input.achieved.count)
+    : null;
+
   return {
-    status: monthlyIsLower ? ('within' as const) : ('over' as const),
-    difference: {
-      direction: monthlyIsLower ? ('within-by' as const) : ('over-by' as const),
-      amountUnits: Math.abs(monthlyUnits - benchmarkUnits),
-      amountYen: unitsToRoundedYen(Math.abs(monthlyUnits - benchmarkUnits)),
-    },
+    ...input,
+    purposeLabel: purposeOptions.find((option) => option.id === input.purpose)?.label ?? input.purpose,
+    planAchievement,
+    yenPerAchievedVisit,
+    achievedCostStatus,
   };
 }
 
-function calculateRequiredVisits(monthlyUnits: number, limitYen: number): number {
-  if (!Number.isSafeInteger(limitYen) || limitYen <= 0) {
-    throw new RangeError('per-visit limit must be a positive safe integer.');
+export function assessEquivalence(equivalence: AlternativeEquivalence): {
+  status: EquivalenceStatus;
+  failed: EquivalenceDimension[];
+  uncertain: EquivalenceDimension[];
+} {
+  const dimensions = Object.keys(equivalence) as EquivalenceDimension[];
+  const failed = dimensions.filter((dimension) => equivalence[dimension] === 'does-not-meet');
+  const uncertain = dimensions.filter((dimension) => equivalence[dimension] === 'unknown');
+  return {
+    status: failed.length > 0 ? 'not-equivalent' : uncertain.length > 0 ? 'unknown' : 'equivalent',
+    failed,
+    uncertain,
+  };
+}
+
+function calculateAlternativeBaseUnits(alternative: KnownAlternative): number {
+  return yenToUnits(
+    alternative.monthlyFixedFeeYen + alternative.requiredServiceMonthlyYen,
+  ) + alternative.annualFeeYen;
+}
+
+export function calculateAlternativeMonthlyCost(
+  alternative: KnownAlternative,
+  visits: VisitKnowledge,
+): AlternativeMonthlyCost {
+  const baseUnits = calculateAlternativeBaseUnits(alternative);
+  if (alternative.pricing.kind === 'monthly') {
+    const units = baseUnits + yenToUnits(alternative.pricing.monthlyFeeYen);
+    return { kind: 'exact', units, roundedYen: unitsToRoundedYen(units) };
   }
-  if (monthlyUnits === 0) return 1;
-  return Math.ceil(monthlyUnits / yenToUnits(limitYen));
+
+  const perVisitUnits = yenToUnits(alternative.pricing.perVisitFeeYen);
+  if (perVisitUnits === 0) {
+    return { kind: 'exact', units: baseUnits, roundedYen: unitsToRoundedYen(baseUnits) };
+  }
+  if (visits.kind === 'exact') {
+    const units = baseUnits + perVisitUnits * visits.visits;
+    return { kind: 'exact', units, roundedYen: unitsToRoundedYen(units) };
+  }
+  if (visits.kind === 'bounded') {
+    const minUnits = baseUnits + perVisitUnits * visits.min;
+    const maxUnits = baseUnits + perVisitUnits * visits.max;
+    return {
+      kind: 'bounded',
+      minUnits,
+      maxUnits,
+      minRoundedYen: unitsToRoundedYen(minUnits),
+      maxRoundedYen: unitsToRoundedYen(maxUnits),
+    };
+  }
+  if (visits.kind === 'at-least') {
+    const minUnits = baseUnits + perVisitUnits * visits.min;
+    return { kind: 'at-least', minUnits, minRoundedYen: unitsToRoundedYen(minUnits) };
+  }
+  return { kind: 'unknown' };
+}
+
+function classifyPrice(currentUnits: number, alternative: AlternativeMonthlyCost): PriceStatus {
+  if (alternative.kind === 'unknown') return 'insufficient';
+  if (alternative.kind === 'exact') {
+    if (alternative.units === currentUnits) return 'equal';
+    return alternative.units > currentUnits ? 'current-lower' : 'alternative-lower';
+  }
+  if (alternative.kind === 'bounded') {
+    if (alternative.minUnits >= currentUnits) return 'current-lower';
+    if (alternative.maxUnits <= currentUnits) return 'alternative-lower';
+    return 'depends-on-visits';
+  }
+  return alternative.minUnits >= currentUnits ? 'current-lower' : 'depends-on-visits';
+}
+
+function calculateRatio(currentUnits: number, alternative: AlternativeMonthlyCost): RatioResult | null {
+  if (currentUnits === 0) return null;
+  if (alternative.kind === 'unknown') return { kind: 'unknown' };
+  if (alternative.kind === 'exact') {
+    return { kind: 'exact', percent: percentageToOneDecimal(alternative.units, currentUnits) };
+  }
+  if (alternative.kind === 'bounded') {
+    return {
+      kind: 'bounded',
+      minPercent: percentageToOneDecimal(alternative.minUnits, currentUnits),
+      maxPercent: percentageToOneDecimal(alternative.maxUnits, currentUnits),
+    };
+  }
+  return {
+    kind: 'at-least',
+    minPercent: percentageToOneDecimal(alternative.minUnits, currentUnits),
+  };
+}
+
+function calculateDifference(
+  currentUnits: number,
+  alternative: AlternativeMonthlyCost,
+): DifferenceResult {
+  if (alternative.kind === 'unknown') return { kind: 'unknown' };
+  if (alternative.kind === 'exact') {
+    const units = alternative.units - currentUnits;
+    return {
+      kind: 'exact',
+      units,
+      roundedYen: signedUnitsToRoundedYen(units),
+      annualYen: units,
+    };
+  }
+  if (alternative.kind === 'bounded') {
+    const minUnits = alternative.minUnits - currentUnits;
+    const maxUnits = alternative.maxUnits - currentUnits;
+    return {
+      kind: 'bounded',
+      minUnits,
+      maxUnits,
+      minRoundedYen: signedUnitsToRoundedYen(minUnits),
+      maxRoundedYen: signedUnitsToRoundedYen(maxUnits),
+      minAnnualYen: minUnits,
+      maxAnnualYen: maxUnits,
+    };
+  }
+  const minUnits = alternative.minUnits - currentUnits;
+  return {
+    kind: 'at-least',
+    minUnits,
+    minRoundedYen: signedUnitsToRoundedYen(minUnits),
+    minAnnualYen: minUnits,
+  };
+}
+
+function calculatePurePerVisitBreakEven(
+  currentUnits: number,
+  alternative: KnownAlternative,
+  equivalenceStatus: EquivalenceStatus,
+): PurePerVisitBreakEven | null {
+  if (
+    equivalenceStatus !== 'equivalent'
+    || alternative.pricing.kind !== 'per-visit'
+    || calculateAlternativeBaseUnits(alternative) !== 0
+    || alternative.pricing.perVisitFeeYen <= 0
+  ) {
+    return null;
+  }
+  const perVisitUnits = yenToUnits(alternative.pricing.perVisitFeeYen);
+  return {
+    equalityVisits: currentUnits / perVisitUnits,
+    firstVisitCurrentNoMoreExpensive: Math.ceil(currentUnits / perVisitUnits),
+    firstVisitCurrentStrictlyCheaper: Math.floor(currentUnits / perVisitUnits) + 1,
+  };
 }
 
 export function assessPrice(
   fees: FeeValues,
-  visits: VisitKnowledge | null,
-  benchmark: PriceBenchmark,
+  visits: VisitKnowledge,
+  alternative: AlternativeInput,
 ): PriceAssessment {
-  const monthlyEquivalent = calculateMonthlyEquivalent(fees);
-  const monthly = { ...monthlyEquivalent, fees };
-  const perVisit = visits ? calculatePerVisitResult(monthly.units, visits) : null;
-
-  if (benchmark.kind === 'monthly-limit' || benchmark.kind === 'alternative-monthly') {
-    const benchmarkUnits = yenToUnits(benchmark.amountYen);
-    const comparison = compareMonthlyUnits(monthly.units, benchmarkUnits);
+  const monthly = { ...calculateMonthlyEquivalent(fees), fees };
+  const samePricePerVisit = calculatePerVisitResult(monthly.units, visits);
+  if (alternative.availability === 'unknown') {
     return {
-      ...comparison,
-      monthly,
-      benchmark,
-      requiredVisits: null,
-      perVisit,
-      hasRoundedBoundaryDifference:
-        monthly.roundedYen === benchmark.amountYen && monthly.units !== benchmarkUnits,
+      status: 'insufficient',
+      insufficientReason: 'alternative-unknown',
+      current: monthly,
+      alternative,
+      equivalenceStatus: null,
+      failedEquivalence: [],
+      uncertainEquivalence: [],
+      alternativeMonthly: null,
+      alternativeValueRatio: null,
+      difference: null,
+      samePricePerVisit,
+      purePerVisitBreakEven: null,
+      hasRoundedBoundaryDifference: false,
     };
   }
 
-  if (!visits || !perVisit) {
-    throw new RangeError('visit knowledge is required for a per-visit benchmark.');
-  }
-
-  const requiredVisits = calculateRequiredVisits(monthly.units, benchmark.amountYen);
-  const limitUnits = yenToUnits(benchmark.amountYen);
-  let status: PriceStatus;
-
-  if (visits.kind === 'exact') {
-    if (visits.visits === 0) status = monthly.units === 0 ? 'insufficient' : 'over';
-    else status = monthly.units <= limitUnits * visits.visits ? 'within' : 'over';
-  } else if (visits.kind === 'bounded') {
-    if (monthly.units <= limitUnits * visits.min) status = 'within';
-    else if (monthly.units > limitUnits * visits.max) status = 'over';
-    else status = 'mixed';
-  } else if (visits.kind === 'at-least') {
-    status = monthly.units <= limitUnits * visits.min ? 'within' : 'mixed';
-  } else {
-    status = 'insufficient';
-  }
-
-  const isRoundedBoundaryDifference = (scenarioVisits: number, roundedYen: number | null) =>
-    scenarioVisits > 0
-    && roundedYen === benchmark.amountYen
-    && monthly.units !== limitUnits * scenarioVisits;
-  let hasRoundedBoundaryDifference: boolean;
-  if (perVisit.kind === 'exact') {
-    hasRoundedBoundaryDifference = isRoundedBoundaryDifference(
-      perVisit.visits,
-      perVisit.yenPerVisit,
-    );
-  } else if (perVisit.kind === 'bounded') {
-    hasRoundedBoundaryDifference = isRoundedBoundaryDifference(
-      perVisit.minVisits,
-      perVisit.maxYenPerVisit,
-    ) || isRoundedBoundaryDifference(perVisit.maxVisits, perVisit.minYenPerVisit);
-  } else if (perVisit.kind === 'at-least') {
-    hasRoundedBoundaryDifference = isRoundedBoundaryDifference(
-      perVisit.minVisits,
-      perVisit.maxYenPerVisit,
-    );
-  } else {
-    hasRoundedBoundaryDifference = perVisit.rows.some((row) =>
-      isRoundedBoundaryDifference(row.visits, row.yenPerVisit),
-    );
-  }
+  const equivalence = assessEquivalence(alternative.equivalence);
+  const alternativeMonthly = calculateAlternativeMonthlyCost(alternative, visits);
+  const status = equivalence.status === 'not-equivalent'
+    ? 'not-equivalent'
+    : equivalence.status === 'unknown'
+      ? 'equivalence-unknown'
+      : classifyPrice(monthly.units, alternativeMonthly);
+  const eligibleForComparison = equivalence.status === 'equivalent';
+  const exactAlternative = alternativeMonthly.kind === 'exact' ? alternativeMonthly : null;
 
   return {
     status,
-    monthly,
-    benchmark,
-    difference: null,
-    requiredVisits,
-    perVisit,
-    hasRoundedBoundaryDifference,
+    insufficientReason: status === 'insufficient' ? 'visits-unknown' : null,
+    current: monthly,
+    alternative,
+    equivalenceStatus: equivalence.status,
+    failedEquivalence: equivalence.failed,
+    uncertainEquivalence: equivalence.uncertain,
+    alternativeMonthly,
+    alternativeValueRatio: eligibleForComparison
+      ? calculateRatio(monthly.units, alternativeMonthly)
+      : null,
+    difference: eligibleForComparison
+      ? calculateDifference(monthly.units, alternativeMonthly)
+      : null,
+    samePricePerVisit,
+    purePerVisitBreakEven: calculatePurePerVisitBreakEven(
+      monthly.units,
+      alternative,
+      equivalence.status,
+    ),
+    hasRoundedBoundaryDifference: Boolean(
+      eligibleForComparison
+      && exactAlternative
+      && exactAlternative.roundedYen === monthly.roundedYen
+      && exactAlternative.units !== monthly.units,
+    ),
   };
 }
 
-export function assessValue(
-  purpose: PurposeId,
-  progress: PurposeProgress,
-  replaceability: Replaceability,
-): ValueAssessment {
-  let status: ValueStatus;
-  if (progress === 'unknown' || replaceability === 'unknown') {
-    status = 'insufficient';
-  } else if (progress === 'achieved' && (replaceability === 'hard' || replaceability === 'possible')) {
-    status = 'strong';
-  } else if (progress === 'hardly' && (replaceability === 'possible' || replaceability === 'easy')) {
-    status = 'weak';
-  } else {
-    status = 'mixed';
-  }
-
-  return {
-    status,
-    purpose,
-    purposeLabel: purposeOptions.find((option) => option.id === purpose)?.label ?? purpose,
-    progress,
-    replaceability,
-  };
-}
-
-export function buildOverallAssessment(
+export function buildPrimaryRecommendation(
   priceStatus: PriceStatus,
-  valueStatus: ValueStatus,
-): OverallAssessment {
-  if (priceStatus === 'mixed' || priceStatus === 'insufficient' || valueStatus === 'insufficient') {
-    const priceClause = priceStatus === 'mixed'
-      ? '料金は利用回数によって基準内か超過かが変わります'
-      : priceStatus === 'insufficient'
-        ? '料金は判断材料が不足しています'
-        : priceStatus === 'within'
-          ? '料金はあなたの基準内です'
-          : '料金はあなたの基準を超えています';
-    const valueClause = valueStatus === 'strong'
-      ? '通う価値の根拠は強い状態です'
-      : valueStatus === 'mixed'
-        ? '通う価値には見直し余地があります'
-        : valueStatus === 'weak'
-          ? 'この入力では通う価値の根拠が弱い状態です'
-          : '通う価値は判断材料が不足しています';
-    return { kind: 'inconclusive', headline: `${priceClause}。${valueClause}` };
+  planAchievement: PlanAchievement,
+  visits: VisitKnowledge,
+  achieved: CountKnowledge,
+  barrier: BarrierId,
+  evidence: PurposeEvidence,
+  insufficientReason: PriceAssessment['insufficientReason'] = null,
+): PrimaryRecommendation {
+  let kind: PrimaryRecommendationKind;
+  let headline: string;
+
+  if (planAchievement.kind === 'unknown' || evidence === 'unknown') {
+    kind = 'confirm-materials';
+    headline = '利用実績を確認してから判断する';
+  } else if (priceStatus === 'current-lower' || priceStatus === 'equal') {
+    if (planAchievement.isAtLeastPlan && evidence === 'improved') {
+      kind = 'keep-current-candidate';
+      headline = '今のプランを継続候補にする';
+    } else {
+      kind = 'review-barrier-and-recheck';
+      headline = evidence === 'worse'
+        ? '運動内容・プログラムを見直して再確認する'
+        : evidence === 'unchanged'
+          ? '目的に沿う変化を確認できる方法へ見直す'
+          : barrier === 'none'
+            ? '利用計画と実行方法を1か月だけ見直して再確認する'
+            : '利用を妨げた要因を1か月だけ見直して再確認する';
+    }
+  } else if (priceStatus === 'alternative-lower') {
+    if (planAchievement.isAtLeastPlan && evidence === 'improved') {
+      kind = 'compare-lower-plan';
+      headline = '同じ利用を保てる低料金プランを比較する';
+    } else {
+      kind = 'compare-plan-and-usage';
+      headline = '低料金プランと利用方法の両方を比較する';
+    }
+  } else {
+    kind = 'check-official-plan';
+    headline = priceStatus === 'depends-on-visits'
+      ? '正確な来館回数を記録して料金差を再確認する'
+      : planAchievement.isAtLeastPlan && evidence === 'improved'
+        ? '同額条件を持って公式プランを確認する'
+        : '利用方法を見直し、公式プランも確認する';
   }
-  if (priceStatus === 'within' && valueStatus === 'strong') {
-    return {
-      kind: 'both-supported',
-      headline: 'あなたの基準では、料金にも利用価値にも納得しやすい状態です',
-    };
-  }
-  if (priceStatus === 'within') {
-    return {
-      kind: 'value-review',
-      headline: '料金は基準内ですが、通う価値には見直し余地があります',
-    };
-  }
-  if (valueStatus === 'strong') {
-    return {
-      kind: 'price-review-value-strong',
-      headline: '通う価値の根拠はありますが、料金は基準を超えています',
-    };
-  }
-  if (valueStatus === 'weak') {
-    return {
-      kind: 'both-review',
-      headline: '料金は基準を超え、この入力では通う価値の根拠も弱い状態です',
-    };
-  }
+
+  const valueReviewStep = evidence === 'worse'
+    ? '運動内容・負荷・プログラムが目的に合っているか確認し、回数を増やす前に見直す'
+    : evidence === 'unchanged'
+      ? '確認したい変化を一つ決め、運動内容を見直して1か月後に再確認する'
+      : null;
+  const nextStep = kind === 'confirm-materials'
+    ? '予定した来館回数・目的に使えた来館回数・具体的な変化のうち、不明なものを1か月だけ記録する'
+    : kind === 'compare-lower-plan'
+      ? '必要な設備・利用回数・時間帯・店舗範囲を保てる低料金プランを1件、公式条件で比較する'
+      : kind === 'compare-plan-and-usage'
+        ? `${valueReviewStep ?? barrierNextSteps[barrier]}。そのうえで、同じ条件を満たす低料金プランを1件比較する`
+        : kind === 'check-official-plan'
+          ? `${valueReviewStep ? `${valueReviewStep}。` : ''}${priceStatus === 'depends-on-visits' || insufficientReason === 'visits-unknown'
+              ? '来館回数を1か月だけ記録し、入力済みの都度料金と再比較する'
+              : '必要な設備・利用回数・時間帯・店舗範囲を満たす公式プランを1件確認する'}`
+          : kind === 'review-barrier-and-recheck'
+            ? valueReviewStep
+              ? `${valueReviewStep}${barrier === 'none' ? '' : `。${barrierNextSteps[barrier]}`}`
+              : barrierNextSteps[barrier]
+            : barrierNextSteps[barrier];
+
   return {
-    kind: 'price-review',
-    headline: '料金は基準を超え、通う価値には見直し余地があります',
+    kind,
+    headline,
+    barrier,
+    nextStep,
+    supplementalContractReview:
+      visits.kind === 'exact'
+      && visits.visits === 0
+      && achieved.kind === 'exact'
+      && achieved.count === 0,
   };
 }
 
 export function buildAssessmentResult(input: ValidatedAssessmentInput): AssessmentResult {
-  const price = assessPrice(input.fees, input.visits, input.benchmark);
-  const value = assessValue(input.purpose, input.purposeProgress, input.replaceability);
-  return {
-    input,
-    price,
-    value,
-    overall: buildOverallAssessment(price.status, value.status),
-  };
+  const monthly = calculateMonthlyEquivalent(input.fees);
+  const duration = calculateMonthlyDuration(input.visits, input.time);
+  const perVisit = calculatePerVisitResult(monthly.units, input.visits);
+  const perHour = calculatePerHourResult(monthly.units, duration);
+  const purpose = assessPurpose(monthly.units, input.purpose);
+  const price = assessPrice(input.fees, input.visits, input.alternative);
+  const recommendation = buildPrimaryRecommendation(
+    price.status,
+    purpose.planAchievement,
+    input.visits,
+    input.purpose.achieved,
+    input.barrier,
+    input.purpose.evidence,
+    price.insufficientReason,
+  );
+  return { input, monthly, duration, perVisit, perHour, purpose, price, recommendation };
 }
 
-export function getBenchmarkLabel(kind: PriceBenchmarkKind): string {
-  return priceBenchmarkOptions.find((option) => option.id === kind)?.label ?? kind;
+export function getPurposeLabel(purpose: PurposeId): string {
+  return purposeOptions.find((option) => option.id === purpose)?.label ?? purpose;
 }
 
-export function getProgressLabel(progress: PurposeProgress): string {
-  return purposeProgressOptions.find((option) => option.id === progress)?.label ?? progress;
+export function getPurposeEvidenceLabel(evidence: PurposeEvidence): string {
+  return purposeEvidenceOptions.find((option) => option.id === evidence)?.label ?? evidence;
 }
 
-export function getReplaceabilityLabel(replaceability: Replaceability): string {
-  return replaceabilityOptions.find((option) => option.id === replaceability)?.label ?? replaceability;
+export function getBarrierLabel(barrier: BarrierId): string {
+  return barrierOptions.find((option) => option.id === barrier)?.label ?? barrier;
 }
 
 export function getVisitBandLabel(bandId: VisitBandId): string {
