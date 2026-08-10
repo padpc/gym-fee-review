@@ -10,11 +10,11 @@ type RoutePath = '/' | '/check' | '/methodology' | 'not-found';
 const routeMetadata: Record<RoutePath, { title: string; description: string }> = {
   '/': {
     title: 'ジム会費の活用状況を確認｜ジム会費、元とれてる？',
-    description: 'ジム会費を、利用回数・時間・目的の実績と実在する代替プランから見直すブラウザツールです。',
+    description: 'ジム会費を、来館回数だけでなく目的活動、内容完了、変化、実際に使ったサービスから見直すブラウザツールです。',
   },
   '/check': {
-    title: '会費の活用状況を確認｜ジム会費、元とれてる？',
-    description: '月会費と実際の利用状況から、実績単価、利用計画の達成率、代替プランとの差を確認します。',
+    title: '会費と使い方を診断｜ジム会費、元とれてる？',
+    description: '実質月額と、来館、目的活動、内容完了それぞれの実績単価、使い方、次に変える一つを確認します。',
   },
   '/methodology': {
     title: '計算方法と判断の限界｜ジム会費、元とれてる？',
@@ -90,7 +90,7 @@ export default function App() {
             <FooterLink href="/methodology" currentPath={path}>計算方法</FooterLink>
           </nav>
           <p>契約を変える前に、契約先の最新料金と条件を公式情報で確認してください。</p>
-          <p>入力は保存・送信しません。健康効果や契約変更を断定しません。</p>
+          <p>入力は保存・送信しません。健康効果や契約変更を断定せず、不透明な総合点を出しません。</p>
         </div>
       </footer>
     </>

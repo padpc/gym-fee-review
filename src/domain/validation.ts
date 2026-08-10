@@ -1,16 +1,27 @@
 import {
+  activityOptions,
   barrierOptions,
+  contentFitOptions,
+  continuationOptions,
   purposeEvidenceOptions,
   purposeOptions,
+  requiresBarrier,
+  safetyOptions,
+  usedServiceOptions,
   visitBandOptions,
+  type ActivityId,
   type AlternativeInput,
   type BarrierId,
+  type ContentFit,
   type CountKnowledge,
+  type ContinuationIntent,
   type EquivalenceAnswer,
   type KnownAlternative,
   type PurposeEvidence,
   type PurposeId,
+  type SafetyAnswer,
   type TimeInput,
+  type UsedServiceId,
   type ValidatedAssessmentInput,
   type VisitBandId,
   type VisitKnowledge,
@@ -36,11 +47,16 @@ export interface RawAssessmentInput {
   totalHours: string;
   averageMinutes: string;
   purpose: PurposeId | '';
-  plannedMode: CountMode;
-  plannedCount: string;
-  achievedMode: CountMode;
-  achievedCount: string;
+  activity: ActivityId | '';
+  performedMode: CountMode;
+  performedCount: string;
+  completedMode: CountMode;
+  completedCount: string;
+  contentFit: ContentFit | '';
   purposeEvidence: PurposeEvidence | '';
+  usedServices: UsedServiceId[];
+  continuation: ContinuationIntent | '';
+  safety: SafetyAnswer | '';
   barrier: BarrierId | '';
   alternativeAvailability: AlternativeAvailability;
   alternativeKind: AlternativeKind;
@@ -51,7 +67,7 @@ export interface RawAssessmentInput {
   alternativeMonthlyFixedFee: string;
   alternativeAnnualFee: string;
   alternativeServiceMonthlyFee: string;
-  equivalenceEquipment: EquivalenceAnswer | '';
+  equivalenceServices: EquivalenceAnswer | '';
   equivalenceHours: EquivalenceAnswer | '';
   equivalenceLocation: EquivalenceAnswer | '';
   alternativeSourceConfirmed: boolean;
@@ -82,11 +98,16 @@ export function createEmptyRawAssessmentInput(): RawAssessmentInput {
     totalHours: '',
     averageMinutes: '',
     purpose: '',
-    plannedMode: '',
-    plannedCount: '',
-    achievedMode: '',
-    achievedCount: '',
+    activity: '',
+    performedMode: '',
+    performedCount: '',
+    completedMode: '',
+    completedCount: '',
+    contentFit: '',
     purposeEvidence: '',
+    usedServices: [],
+    continuation: '',
+    safety: '',
     barrier: '',
     alternativeAvailability: 'unknown',
     alternativeKind: '',
@@ -97,10 +118,219 @@ export function createEmptyRawAssessmentInput(): RawAssessmentInput {
     alternativeMonthlyFixedFee: '',
     alternativeAnnualFee: '',
     alternativeServiceMonthlyFee: '',
-    equivalenceEquipment: '',
+    equivalenceServices: '',
     equivalenceHours: '',
     equivalenceLocation: '',
     alternativeSourceConfirmed: false,
+  };
+}
+
+function countFromRaw(mode: CountMode, rawValue: string): CountKnowledge | null {
+  if (mode === 'unknown') return { kind: 'unknown' };
+  if (mode !== 'exact') return null;
+  const normalized = normalizeDigits(rawValue);
+  if (!/^\d+$/.test(normalized)) return null;
+  const count = Number(normalized);
+  return Number.isSafeInteger(count) && count >= 0 && count <= 100
+    ? { kind: 'exact', count }
+    : null;
+}
+
+export function rawRequiresBarrier(raw: RawAssessmentInput): boolean {
+  if (raw.safety === 'concern') return false;
+  const performed = countFromRaw(raw.performedMode, raw.performedCount);
+  const completed = countFromRaw(raw.completedMode, raw.completedCount);
+  if (performed?.kind === 'exact' && performed.count === 0) return true;
+  if (completed?.kind === 'exact' && completed.count === 0) return true;
+  if (
+    performed?.kind === 'exact'
+    && completed?.kind === 'exact'
+    && completed.count < performed.count
+  ) {
+    return true;
+  }
+  if (raw.contentFit && raw.contentFit !== 'fits') return true;
+  if (raw.purposeEvidence && raw.purposeEvidence !== 'improved') return true;
+  return Boolean(raw.continuation && raw.continuation !== 'choose');
+}
+
+export function validateAssessmentInput(
+  raw: RawAssessmentInput,
+): ValidationResult<ValidatedAssessmentInput> {
+  const errors: ErrorMap = {};
+  const fees = validateFees(raw, errors);
+  const visits = validateVisits(raw, errors);
+  const time = validateTime(raw, errors);
+
+  if (
+    visits?.kind === 'exact'
+    && visits.visits === 0
+    && time?.kind === 'total-hours'
+    && time.totalHours > 0
+  ) {
+    errors['total-hours'] = '来館0回の月に、正の実運動時間は入力できません。';
+  }
+
+  const validPurposes = new Set(purposeOptions.map((option) => option.id));
+  const validActivities = new Set(activityOptions.map((option) => option.id));
+  const validFit = new Set(contentFitOptions.map((option) => option.id));
+  const validEvidence = new Set(purposeEvidenceOptions.map((option) => option.id));
+  const validContinuation = new Set(continuationOptions.map((option) => option.id));
+  const validSafety = new Set(safetyOptions.map((option) => option.id));
+  const validBarriers = new Set(barrierOptions.map((option) => option.id));
+  const validServices = new Set(usedServiceOptions.map((option) => option.id));
+  const contentFit = raw.contentFit && validFit.has(raw.contentFit) ? raw.contentFit : null;
+  const purposeEvidence = raw.purposeEvidence && validEvidence.has(raw.purposeEvidence)
+    ? raw.purposeEvidence
+    : null;
+  const continuation = raw.continuation && validContinuation.has(raw.continuation)
+    ? raw.continuation
+    : null;
+  const safety = raw.safety && validSafety.has(raw.safety) ? raw.safety : null;
+
+  if (!raw.purpose || !validPurposes.has(raw.purpose)) {
+    errors.purpose = '主な目的を選んでください。';
+  }
+  if (!raw.activity || !validActivities.has(raw.activity)) {
+    errors.activity = '主な活動を選んでください。';
+  }
+  const performed = validateCountKnowledge(
+    raw.performedMode,
+    raw.performedCount,
+    0,
+    'performed-mode',
+    'performed-count',
+    '目的活動を行った回数S',
+    errors,
+  );
+  const completed = validateCountKnowledge(
+    raw.completedMode,
+    raw.completedCount,
+    0,
+    'completed-mode',
+    'completed-count',
+    '予定内容を完了した回数F',
+    errors,
+  );
+  if (!contentFit) {
+    errors['content-fit'] = '活動の内容・強度・難易度が合っていたか選んでください。';
+  }
+  if (!purposeEvidence) {
+    errors['purpose-evidence'] = '目的に沿う変化を選んでください。';
+  }
+  if (!continuation) {
+    errors.continuation = '同じ条件なら来月も選びたいか選んでください。';
+  }
+  if (!safety) {
+    errors.safety = '運動中・後に確認したい症状があったか選んでください。';
+  }
+
+  const uniqueServices = [...new Set(raw.usedServices)];
+  if (
+    uniqueServices.length === 0
+    || uniqueServices.some((service) => !validServices.has(service))
+  ) {
+    errors['used-services'] = '実際に使った付帯サービスを選んでください。該当しない場合は「特になし」を選びます。';
+  } else if (uniqueServices.includes('none') && uniqueServices.length > 1) {
+    errors['used-services'] = '「特になし」と他の付帯サービスは同時に選べません。';
+  }
+
+  const knownVisitMaximum = visits?.kind === 'exact'
+    ? visits.visits
+    : visits?.kind === 'bounded'
+      ? visits.max
+      : null;
+  if (
+    knownVisitMaximum !== null
+    && performed?.kind === 'exact'
+    && performed.count > knownVisitMaximum
+  ) {
+    errors['performed-count'] = '目的活動回数Sは、来館回数の上限' + knownVisitMaximum + '回以下で入力してください。';
+  }
+  if (
+    knownVisitMaximum !== null
+    && completed?.kind === 'exact'
+    && completed.count > knownVisitMaximum
+  ) {
+    errors['completed-count'] = '内容完了回数Fは、来館回数の上限' + knownVisitMaximum + '回以下で入力してください。';
+  }
+  if (
+    performed?.kind === 'exact'
+    && completed?.kind === 'exact'
+    && completed.count > performed.count
+  ) {
+    errors['completed-count'] = '内容完了回数Fは、目的活動回数S以下で入力してください。';
+  }
+
+  let barrier: BarrierId | null = null;
+  if (performed && completed && contentFit && purposeEvidence && continuation && safety) {
+    const required = requiresBarrier({
+      performed,
+      completed,
+      contentFit,
+      evidence: purposeEvidence,
+      continuation,
+      safety,
+    });
+    if (required) {
+      if (!raw.barrier || !validBarriers.has(raw.barrier)) {
+        errors.barrier = '利用を妨げた主な要因を選んでください。';
+      } else {
+        barrier = raw.barrier;
+      }
+    }
+  }
+
+  const alternative = validateAlternative(raw, errors);
+  if (
+    Object.keys(errors).length > 0
+    || !fees.monthlyFee.ok
+    || !fees.monthlyFixedFee.ok
+    || !fees.annualFee.ok
+    || !visits
+    || !time
+    || !raw.purpose
+    || !validPurposes.has(raw.purpose)
+    || !raw.activity
+    || !validActivities.has(raw.activity)
+    || !performed
+    || !completed
+    || !contentFit
+    || !purposeEvidence
+    || !continuation
+    || !safety
+    || uniqueServices.length === 0
+    || uniqueServices.some((service) => !validServices.has(service))
+    || (uniqueServices.includes('none') && uniqueServices.length > 1)
+    || !alternative
+  ) {
+    return { ok: false, errors };
+  }
+
+  return {
+    ok: true,
+    value: {
+      fees: {
+        monthlyFeeYen: fees.monthlyFee.value,
+        monthlyFixedFeeYen: fees.monthlyFixedFee.value,
+        annualFeeYen: fees.annualFee.value,
+      },
+      visits,
+      time,
+      purpose: {
+        purpose: raw.purpose,
+        activity: raw.activity,
+        performed,
+        completed,
+        contentFit,
+        evidence: purposeEvidence,
+      },
+      usedServices: uniqueServices,
+      continuation,
+      safety,
+      barrier,
+      alternative,
+    },
   };
 }
 
@@ -242,8 +472,8 @@ function validateTime(raw: RawAssessmentInput, errors: ErrorMap): TimeInput | nu
       raw.totalHours,
       1,
       7_440,
-      '月の合計滞在時間を入力してください。',
-      '月の合計滞在時間を0.1～744.0時間、0.1時間刻みで入力してください。',
+      '月の合計実運動時間を入力してください。',
+      '月の合計実運動時間を0.1～744.0時間、0.1時間刻みで入力してください。',
     );
     if (!result.ok) {
       errors['total-hours'] = result.error;
@@ -255,8 +485,8 @@ function validateTime(raw: RawAssessmentInput, errors: ErrorMap): TimeInput | nu
     raw.averageMinutes,
     1,
     1_440,
-    '1回の平均滞在時間を入力してください。',
-    '1回の平均滞在時間を1～1,440分の整数で入力してください。',
+    '1回の平均実運動時間を入力してください。',
+    '1回の平均実運動時間を1～1,440分の整数で入力してください。',
   );
   if (!result.ok) {
     errors['average-minutes'] = result.error;
@@ -390,10 +620,10 @@ function validateAlternative(
     else pricing = { kind: 'per-visit', perVisitFeeYen: perVisitFee.value };
   }
 
-  const equipment = validateEquivalence(
-    raw.equivalenceEquipment,
-    'equivalence-equipment',
-    '必要な設備・サービス',
+  const services = validateEquivalence(
+    raw.equivalenceServices,
+    'equivalence-services',
+    '実利用サービスと主な活動の条件',
     errors,
   );
   const hours = validateEquivalence(
@@ -418,7 +648,7 @@ function validateAlternative(
     || !monthlyFixedFee.ok
     || !annualFee.ok
     || !serviceMonthlyFee.ok
-    || !equipment
+    || !services
     || !hours
     || !location
   ) {
@@ -432,109 +662,6 @@ function validateAlternative(
     monthlyFixedFeeYen: monthlyFixedFee.value,
     annualFeeYen: annualFee.value,
     requiredServiceMonthlyYen: serviceMonthlyFee.value,
-    equivalence: { equipment, hours, location },
-  };
-}
-
-export function validateAssessmentInput(
-  raw: RawAssessmentInput,
-): ValidationResult<ValidatedAssessmentInput> {
-  const errors: ErrorMap = {};
-  const fees = validateFees(raw, errors);
-  const visits = validateVisits(raw, errors);
-  const time = validateTime(raw, errors);
-
-  if (
-    visits?.kind === 'exact'
-    && visits.visits === 0
-    && time?.kind === 'total-hours'
-    && time.totalHours > 0
-  ) {
-    errors['total-hours'] = '来館0回の月に、正の合計滞在時間は入力できません。';
-  }
-
-  const validPurposes = new Set(purposeOptions.map((option) => option.id));
-  const validEvidence = new Set(purposeEvidenceOptions.map((option) => option.id));
-  const validBarriers = new Set(barrierOptions.map((option) => option.id));
-  if (!raw.purpose || !validPurposes.has(raw.purpose)) {
-    errors.purpose = '主な目的を選んでください。';
-  }
-  const planned = validateCountKnowledge(
-    raw.plannedMode,
-    raw.plannedCount,
-    1,
-    'planned-mode',
-    'planned-count',
-    '予定回数',
-    errors,
-  );
-  const achieved = validateCountKnowledge(
-    raw.achievedMode,
-    raw.achievedCount,
-    0,
-    'achieved-mode',
-    'achieved-count',
-    '目的に使えた来館回数',
-    errors,
-  );
-  if (!raw.purposeEvidence || !validEvidence.has(raw.purposeEvidence)) {
-    errors['purpose-evidence'] = '目的に関する具体的な変化を選んでください。';
-  }
-  if (!raw.barrier || !validBarriers.has(raw.barrier)) {
-    errors.barrier = '利用を妨げた主な要因を選んでください。';
-  }
-
-  if (visits && achieved?.kind === 'exact') {
-    const knownMaximum = visits.kind === 'exact'
-      ? visits.visits
-      : visits.kind === 'bounded'
-        ? visits.max
-        : null;
-    if (knownMaximum !== null && achieved.count > knownMaximum) {
-      errors['achieved-count'] = `目的に使えた来館回数は、来館回数の上限${knownMaximum}回以下で入力してください。`;
-    }
-  }
-
-  const alternative = validateAlternative(raw, errors);
-
-  if (
-    Object.keys(errors).length > 0
-    || !fees.monthlyFee.ok
-    || !fees.monthlyFixedFee.ok
-    || !fees.annualFee.ok
-    || !visits
-    || !time
-    || !raw.purpose
-    || !validPurposes.has(raw.purpose)
-    || !planned
-    || !achieved
-    || !raw.purposeEvidence
-    || !validEvidence.has(raw.purposeEvidence)
-    || !raw.barrier
-    || !validBarriers.has(raw.barrier)
-    || !alternative
-  ) {
-    return { ok: false, errors };
-  }
-
-  return {
-    ok: true,
-    value: {
-      fees: {
-        monthlyFeeYen: fees.monthlyFee.value,
-        monthlyFixedFeeYen: fees.monthlyFixedFee.value,
-        annualFeeYen: fees.annualFee.value,
-      },
-      visits,
-      time,
-      purpose: {
-        purpose: raw.purpose,
-        planned,
-        achieved,
-        evidence: raw.purposeEvidence,
-      },
-      barrier: raw.barrier,
-      alternative,
-    },
+    equivalence: { services, hours, location },
   };
 }

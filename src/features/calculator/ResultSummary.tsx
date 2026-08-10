@@ -1,15 +1,20 @@
 import type { RefObject } from 'react';
 import {
+  getContentFitLabel,
   getBarrierLabel,
+  getContinuationLabel,
   getPurposeEvidenceLabel,
+  getSafetyLabel,
   type AlternativeMonthlyCost,
   type AssessmentResult,
+  type CountCostStatus,
   type DifferenceResult,
   type EquivalenceDimension,
+  type PerActivityCostResult,
   type PerHourResult,
   type PerVisitResult,
   type PriceStatus,
-  type RatioResult,
+  type UsageRateResult,
 } from '../../domain/assessment';
 import { formatNumber, formatYen } from '../../shared/format';
 
@@ -30,8 +35,8 @@ const priceStatusLabels: Record<PriceStatus, string> = {
 };
 
 const equivalenceLabels: Record<EquivalenceDimension, string> = {
-  equipment: '必要な設備・サービス',
-  hours: '必要な利用回数・時間帯',
+  services: '主な活動・実際に使った付帯サービス',
+  hours: '必要な利用時間帯',
   location: '必要な店舗範囲',
 };
 
@@ -57,18 +62,68 @@ function PerVisitEvidence({ result, title = '1回あたり' }: { result: PerVisi
 
 function PerHourEvidence({ result }: { result: PerHourResult }) {
   if (result.kind === 'unknown') {
-    return <div className="metric-value"><strong>算出していません</strong><span>滞在時間を入力していないか、回数が不明です</span></div>;
+    return <div className="metric-value"><strong>算出していません</strong><span>実運動時間を入力していないか、回数が不明です</span></div>;
   }
   if (result.kind === 'exact') {
     if (result.yenPerHour === null) {
-      return <div className="metric-value"><strong>算出できません</strong><span>合計滞在時間が0分です</span></div>;
+      return <div className="metric-value"><strong>算出できません</strong><span>合計実運動時間が0分です</span></div>;
     }
-    return <div className="metric-value"><strong>{formatYen(result.yenPerHour)}／時間</strong><span>合計{formatNumber(result.minutes / 60)}時間で計算</span></div>;
+    return <div className="metric-value"><strong>{formatYen(result.yenPerHour)}／時間</strong><span>合計実運動{formatNumber(result.minutes / 60)}時間で計算</span></div>;
   }
   if (result.kind === 'bounded') {
-    return <div className="metric-value"><strong>{formatNumber(result.minYenPerHour)}～{formatNumber(result.maxYenPerHour)}円／時間</strong><span>合計{formatNumber(result.minMinutes / 60)}～{formatNumber(result.maxMinutes / 60)}時間の範囲</span></div>;
+    return <div className="metric-value"><strong>{formatNumber(result.minYenPerHour)}～{formatNumber(result.maxYenPerHour)}円／時間</strong><span>合計実運動{formatNumber(result.minMinutes / 60)}～{formatNumber(result.maxMinutes / 60)}時間の範囲</span></div>;
   }
-  return <div className="metric-value"><strong>{formatYen(result.maxYenPerHour)}以下／時間</strong><span>合計{formatNumber(result.minMinutes / 60)}時間以上として計算</span></div>;
+  return <div className="metric-value"><strong>{formatYen(result.maxYenPerHour)}以下／時間</strong><span>合計実運動{formatNumber(result.minMinutes / 60)}時間以上として計算</span></div>;
+}
+
+function PerActivityEvidence({ result }: { result: PerActivityCostResult }) {
+  if (result.kind === 'unknown') {
+    return <div className="metric-value"><strong>算出していません</strong><span>目的活動回数Sが不明です</span></div>;
+  }
+  if (result.yenPerActivity === null) {
+    return <div className="metric-value"><strong>算出できません</strong><span>目的活動0回・支払額{formatYen(result.unusedPaymentYen)}</span></div>;
+  }
+  return <div className="metric-value"><strong>{formatYen(result.yenPerActivity)}／回</strong><span>目的活動{result.activities}回で同額</span></div>;
+}
+
+function CountCostEvidence({
+  status,
+  yen,
+  count,
+  unknownText,
+}: {
+  status: CountCostStatus;
+  yen: number | null;
+  count: number | null;
+  unknownText: string;
+}) {
+  if (status === 'known') {
+    return <div className="metric-value"><strong>{formatYen(yen ?? 0)}／回</strong><span>{count}回で計算</span></div>;
+  }
+  if (status === 'zero-count') {
+    return <div className="metric-value"><strong>算出できません</strong><span>回数が0回です</span></div>;
+  }
+  return <div className="metric-value"><strong>算出していません</strong><span>{unknownText}</span></div>;
+}
+
+function RateEvidence({ result, numeratorName, denominatorName }: {
+  result: UsageRateResult;
+  numeratorName: string;
+  denominatorName: string;
+}) {
+  if (result.kind === 'exact') {
+    return <><dd><strong>{formatPercent(result.percent)}</strong></dd><dd>{numeratorName}{result.numerator}回／{denominatorName}{result.denominator}回</dd></>;
+  }
+  if (result.kind === 'bounded') {
+    return <><dd><strong>{formatNumber(result.minPercent)}～{formatNumber(result.maxPercent)}%</strong></dd><dd>{denominatorName}を範囲のまま計算</dd></>;
+  }
+  if (result.kind === 'at-most') {
+    return <><dd><strong>{formatPercent(result.maxPercent)}以下</strong></dd><dd>{denominatorName}{result.minDenominator}回以上</dd></>;
+  }
+  if (result.kind === 'zero-denominator') {
+    return <><dd><strong>算出できません</strong></dd><dd>{denominatorName}が0回です</dd></>;
+  }
+  return <><dd><strong>算出していません</strong></dd><dd>必要な回数が不明です</dd></>;
 }
 
 function AlternativeCost({ cost }: { cost: AlternativeMonthlyCost }) {
@@ -76,14 +131,6 @@ function AlternativeCost({ cost }: { cost: AlternativeMonthlyCost }) {
   if (cost.kind === 'exact') return <strong>{formatYen(cost.roundedYen)}／月</strong>;
   if (cost.kind === 'bounded') return <strong>{formatNumber(cost.minRoundedYen)}～{formatNumber(cost.maxRoundedYen)}円／月</strong>;
   return <strong>{formatYen(cost.minRoundedYen)}以上／月</strong>;
-}
-
-function RatioEvidence({ ratio, nullReason }: { ratio: RatioResult | null; nullReason: string }) {
-  if (ratio === null) return <span>{nullReason}</span>;
-  if (ratio.kind === 'unknown') return <span>回数不明のため算出できません</span>;
-  if (ratio.kind === 'exact') return <strong>約{formatPercent(ratio.percent)}</strong>;
-  if (ratio.kind === 'bounded') return <strong>約{formatPercent(ratio.minPercent)}～{formatPercent(ratio.maxPercent)}</strong>;
-  return <strong>約{formatPercent(ratio.minPercent)}以上</strong>;
 }
 
 function exactDifferenceText(difference: Extract<DifferenceResult, { kind: 'exact' }>) {
@@ -120,8 +167,8 @@ function DifferenceEvidence({ difference }: { difference: DifferenceResult | nul
 function PriceReason({ result }: { result: AssessmentResult }) {
   const { price } = result;
   if (price.status === 'insufficient') {
-    return price.insufficientReason === 'visits-unknown'
-      ? <p>公式の都度料金はありますが、利用回数が不明なため月額差を確定していません。</p>
+    return price.insufficientReason === 'activity-count-unknown'
+      ? <p>公式の都度料金はありますが、目的活動回数Sが不明なため月額差を確定していません。</p>
       : <p>公式に確認した代替料金がないため、料金の得・損は確定していません。</p>;
   }
   if (price.status === 'not-equivalent') {
@@ -136,56 +183,74 @@ function PriceReason({ result }: { result: AssessmentResult }) {
   return <p>同じ目的に必要な条件を満たす代替が、現在の実質月額より低いか同額の試算です。</p>;
 }
 
-function PlanAchievementCard({ result }: { result: AssessmentResult }) {
-  const { purpose } = result;
-  if (purpose.planAchievement.kind === 'unknown') {
-    return (
-      <section className="result-card" aria-labelledby="achievement-heading">
-        <p className="result-card__eyebrow">会費活用度の中心指標</p>
-        <h3 id="achievement-heading">利用計画達成率</h3>
-        <div className="metric-value"><strong>算出していません</strong><span>予定した来館回数または目的に使えた来館回数が不明です</span></div>
-        <p>{purpose.purposeLabel}について、分かる実績だけを表示します。</p>
-      </section>
-    );
-  }
+function UsageSummary({ result }: { result: AssessmentResult }) {
+  const performedCount = result.purpose.performed.kind === 'exact' ? result.purpose.performed.count : null;
+  const completedCount = result.purpose.completed.kind === 'exact' ? result.purpose.completed.count : null;
   return (
-    <section className="result-card result-card--highlight" aria-labelledby="achievement-heading">
-      <p className="result-card__eyebrow">会費活用度の中心指標</p>
-      <h3 id="achievement-heading">利用計画達成率</h3>
-      <div className="metric-value metric-value--large">
-        <strong>{formatPercent(purpose.planAchievement.percent)}</strong>
-        <span>予定{purpose.planAchievement.plannedCount}回／実績{purpose.planAchievement.achievedCount}回</span>
+    <section className="result-section" aria-labelledby="usage-summary-heading">
+      <h3 id="usage-summary-heading">回数ごとの料金と使い方</h3>
+      <div className="result-metrics result-metrics--four">
+        <section className="result-card" aria-labelledby="per-visit-heading">
+          <h3 id="per-visit-heading">来館1回あたり</h3>
+          <PerVisitEvidence result={result.perVisit} />
+        </section>
+        <section className="result-card" aria-labelledby="per-performed-heading">
+          <h3 id="per-performed-heading">目的活動1回あたり</h3>
+          <CountCostEvidence status={result.purpose.performedCostStatus} yen={result.purpose.yenPerPerformed} count={performedCount} unknownText="目的活動回数Sが不明です" />
+        </section>
+        <section className="result-card" aria-labelledby="per-completed-heading">
+          <h3 id="per-completed-heading">内容完了1回あたり</h3>
+          <CountCostEvidence status={result.purpose.completedCostStatus} yen={result.purpose.yenPerCompleted} count={completedCount} unknownText="内容完了回数Fが不明です" />
+        </section>
+        {result.input.time.kind !== 'unknown' ? (
+          <section className="result-card" aria-labelledby="per-hour-heading">
+            <h3 id="per-hour-heading">実運動1時間あたり</h3>
+            <PerHourEvidence result={result.perHour} />
+          </section>
+        ) : null}
       </div>
-      {purpose.planAchievement.remainingCount > 0 ? <p>予定までは、あと{purpose.planAchievement.remainingCount}回です。</p> : <p>予定した回数以上を実行できています。</p>}
-      <p>100%は予定と実績の一致だけを意味し、料金や健康効果を含む総合点ではありません。</p>
+      <dl className="usage-rate-grid">
+        <div><dt>活動利用率 S÷V</dt><RateEvidence result={result.purpose.activityRate} numeratorName="S" denominatorName="V" /></div>
+        <div><dt>内容完了率 F÷S</dt><RateEvidence result={result.purpose.completionRate} numeratorName="F" denominatorName="S" /></div>
+      </dl>
+      <p>100%は分子と分母が同じ回数だったことだけを意味し、料金・健康・満足を含む総合点ではありません。</p>
     </section>
   );
 }
 
-function UsageCards({ result }: { result: AssessmentResult }) {
-  const achieved = result.purpose.achieved;
+function ValueEvidence({ result }: { result: AssessmentResult }) {
   return (
-    <div className="result-metrics">
-      <section className="result-card" aria-labelledby="per-visit-heading">
-        <h3 id="per-visit-heading">1回あたり料金</h3>
-        <PerVisitEvidence result={result.perVisit} />
-      </section>
-      <section className="result-card" aria-labelledby="per-hour-heading">
-        <h3 id="per-hour-heading">1時間あたり料金</h3>
-        <PerHourEvidence result={result.perHour} />
-      </section>
-      <section className="result-card" aria-labelledby="per-purpose-heading">
-        <h3 id="per-purpose-heading">目的に使えた来館1回あたり</h3>
-        {result.purpose.achievedCostStatus === 'known' ? (
-          <div className="metric-value"><strong>{formatYen(result.purpose.yenPerAchievedVisit ?? 0)}／回</strong><span>{achieved.kind === 'exact' ? achieved.count : 0}回で計算</span></div>
-        ) : result.purpose.achievedCostStatus === 'zero-achieved' ? (
-          <div className="metric-value"><strong>算出できません</strong><span>目的に使えた来館回数が0回です</span></div>
-        ) : (
-          <div className="metric-value"><strong>算出していません</strong><span>目的に使えた来館回数が不明です</span></div>
-        )}
-        <p>{result.purpose.purposeLabel}：{getPurposeEvidenceLabel(result.purpose.evidence)}</p>
-      </section>
-    </div>
+    <section className="result-section" aria-labelledby="value-evidence-heading">
+      <h3 id="value-evidence-heading">内容・変化・実際に使った条件</h3>
+      <dl className="quality-grid">
+        <div><dt>主な目的</dt><dd>{result.purpose.purposeLabel}</dd></div>
+        <div><dt>主な活動</dt><dd>{result.purpose.activityLabel}</dd></div>
+        <div><dt>活動に合う内容</dt><dd>{getContentFitLabel(result.purpose.contentFit)}</dd></div>
+        <div><dt>目的に沿う変化</dt><dd>{getPurposeEvidenceLabel(result.purpose.evidence)}<br /><small>確認例：{result.purpose.changeExamples}</small></dd></div>
+        <div><dt>来月も選びたいか</dt><dd>{getContinuationLabel(result.input.continuation)}</dd></div>
+        <div><dt>安全上の回答</dt><dd>{getSafetyLabel(result.input.safety)}</dd></div>
+      </dl>
+      <h4>現在プランで実際に使った付帯サービス</h4>
+      <ul className="service-tags">
+        {result.usedServiceLabels.map((label) => <li key={label}>{label}</li>)}
+      </ul>
+      <p>活動の種類やサービスへ独自の金額倍率を付けず、実利用の事実と代替に必要な条件として扱います。</p>
+    </section>
+  );
+}
+
+function CompletionOpportunityCard({ result }: { result: AssessmentResult }) {
+  const opportunity = result.purpose.completionOpportunity;
+  if (opportunity.kind !== 'available') return null;
+  return (
+    <section className="result-section completion-opportunity" aria-labelledby="completion-opportunity-heading">
+      <h3 id="completion-opportunity-heading">同じ活動回数で、始めた内容を完了できた場合</h3>
+      <div className="completion-opportunity__values">
+        <div><span>現在：完了{opportunity.completedCount}回</span><strong>{opportunity.currentYenPerCompleted === null ? '算出できません' : `${formatYen(opportunity.currentYenPerCompleted)}／完了`}</strong></div>
+        <div><span>同じS{opportunity.performedCount}回をすべて完了</span><strong>{formatYen(opportunity.ifAllPerformedCompletedYen)}／完了</strong></div>
+      </div>
+      <p>追加来館を勧める計算ではありません。既に始めた{opportunity.performedCount}回のうち、未完了{opportunity.incompleteCount}回の取りこぼしを減らした場合です。</p>
+    </section>
   );
 }
 
@@ -199,20 +264,17 @@ function PriceComparison({ result }: { result: AssessmentResult }) {
       </div>
       <PriceReason result={result} />
 
+      <div className="evidence-box">
+        <h4>同等比較で保持する活動・サービス</h4>
+        <p>{result.purpose.alternativeRequirement}</p>
+        <p><strong>実利用の付帯サービス：</strong>{price.requiredAlternativeServiceLabels.length > 0 ? price.requiredAlternativeServiceLabels.join('・') : '特になし'}</p>
+      </div>
+
       {price.alternative.availability === 'known' ? (
         <>
           <div className="comparison-grid">
             <div><span>現在の実質月額</span><strong>{formatYen(price.current.roundedYen)}</strong></div>
             <div><span>{price.alternative.name}</span>{price.alternativeMonthly ? <AlternativeCost cost={price.alternativeMonthly} /> : <span>算出できません</span>}</div>
-            <div>
-              <span>実利用の代替価値率</span>
-              <RatioEvidence
-                ratio={price.alternativeValueRatio}
-                nullReason={price.equivalenceStatus === 'equivalent'
-                  ? '現在の実質月額が0円のため、率は算出しません'
-                  : '同等条件を満たすと確認できないため、率は算出しません'}
-              />
-            </div>
             <div><span>料金差</span><DifferenceEvidence difference={price.difference} /></div>
           </div>
           {price.alternativeMonthly ? (
@@ -225,17 +287,17 @@ function PriceComparison({ result }: { result: AssessmentResult }) {
         </>
       ) : (
         <div className="evidence-box">
-          <h4>代替不明時の同額条件</h4>
-          <PerVisitEvidence result={price.samePricePerVisit} title="同額になる都度料金" />
-          <p>この金額は「通うべき回数」ではなく、現在会費と都度料金が同額になる条件です。</p>
+          <h4>代替を入力しない場合の同額条件</h4>
+          <PerActivityEvidence result={price.samePricePerActivity} />
+          <p>料金の得・損は確定していません。この金額は、今の目的活動を都度料金で再現した場合に現在会費と同額になる条件です。</p>
         </div>
       )}
 
       {price.purePerVisitBreakEven ? (
         <div className="evidence-box">
-          <h4>都度利用との料金境界</h4>
-          <p>月{price.purePerVisitBreakEven.firstVisitCurrentNoMoreExpensive}回で現在会費が都度利用以下、月{price.purePerVisitBreakEven.firstVisitCurrentStrictlyCheaper}回で現在会費が都度利用より低くなる計算です。</p>
-          <p>同額点は{formatNumber(price.purePerVisitBreakEven.equalityVisits)}回です。来館を増やすよう勧める値ではありません。</p>
+          <h4>目的活動と都度利用の料金境界</h4>
+          <p>目的活動が月{price.purePerVisitBreakEven.firstVisitCurrentNoMoreExpensive}回で現在会費が都度利用以下、月{price.purePerVisitBreakEven.firstVisitCurrentStrictlyCheaper}回で現在会費が都度利用より低くなる計算です。</p>
+          <p>同額点は{formatNumber(price.purePerVisitBreakEven.equalityVisits)}回です。活動回数を増やすよう勧める値ではありません。</p>
         </div>
       ) : null}
 
@@ -246,33 +308,44 @@ function PriceComparison({ result }: { result: AssessmentResult }) {
 
 export function ResultSummary({ result, headingRef, onEdit }: ResultSummaryProps) {
   const { recommendation } = result;
-  const achievementReason = result.purpose.planAchievement.kind === 'known'
-    ? `${formatPercent(result.purpose.planAchievement.percent)}（予定${result.purpose.planAchievement.plannedCount}回・実績${result.purpose.planAchievement.achievedCount}回）`
-    : '予定または実績が不明のため算出なし';
-  const conditionReason = result.price.failedEquivalence.length > 0
-    ? result.price.failedEquivalence.map((item) => equivalenceLabels[item]).join('・')
-    : result.price.uncertainEquivalence.length > 0
-      ? `${result.price.uncertainEquivalence.map((item) => equivalenceLabels[item]).join('・')}が不明`
-      : null;
+  const performedText = result.purpose.performed.kind === 'exact'
+    ? `目的活動 S：${result.purpose.performed.count}回`
+    : '目的活動 S：回数不明';
+  const completedText = result.purpose.completed.kind === 'exact'
+    ? `内容完了 F：${result.purpose.completed.count}回`
+    : '内容完了 F：回数不明';
+  const purposeCostText = result.purpose.performedCostStatus === 'known'
+    ? `目的活動1回 ${formatYen(result.purpose.yenPerPerformed ?? 0)}`
+    : result.purpose.performedCostStatus === 'zero-count'
+      ? '目的活動0回のため単価なし'
+      : '目的活動単価は回数不明のため算出なし';
   return (
     <section className="result" aria-labelledby="result-heading">
       <div className="result__heading-row">
-        <p className="eyebrow">実績・予定・実在代替から計算</p>
+        <p className="eyebrow">来館・目的活動・内容完了から計算</p>
         <h2 id="result-heading" ref={headingRef} tabIndex={-1}>会費の活用状況</h2>
       </div>
 
-      <section className={`recommendation recommendation--${recommendation.kind}`} aria-labelledby="recommendation-heading">
-        <p className="eyebrow">今回の主な確認候補</p>
+      <section className={`result-overview result-overview--${recommendation.kind}`} aria-labelledby="recommendation-heading">
+        <p className="eyebrow">今回の結論</p>
         <h3 id="recommendation-heading">{recommendation.headline}</h3>
-        <dl className="recommendation__reasons">
-          <div><dt>料金</dt><dd>{priceStatusLabels[result.price.status]}</dd></div>
-          <div><dt>利用計画</dt><dd>{achievementReason}</dd></div>
-          <div><dt>具体的な変化・利用</dt><dd>{getPurposeEvidenceLabel(result.purpose.evidence)}</dd></div>
-          <div><dt>主な阻害要因</dt><dd>{getBarrierLabel(recommendation.barrier)}</dd></div>
-          {conditionReason ? <div><dt>満たせない・不明な条件</dt><dd>{conditionReason}</dd></div> : null}
-        </dl>
-        <p><strong>次の1か月で試すこと：</strong>{recommendation.nextStep}</p>
-        {recommendation.supplementalContractReview ? <p className="recommendation__notice">来館0回かつ目的に使えた来館回数0回のため、休会・退会を含む契約自体も確認候補です。</p> : null}
+        <p className="result-overview__reason">{recommendation.reason}</p>
+        <div className="decision-grid">
+          <section>
+            <h4>使い方</h4>
+            <p>{performedText}<br />{completedText}</p>
+          </section>
+          <section>
+            <h4>料金</h4>
+            <p>実質月額 {formatYen(result.monthly.roundedYen)}<br />{purposeCostText}</p>
+          </section>
+          <section className="decision-grid__action">
+            <h4>次の一行動</h4>
+            <p>{recommendation.nextStep}</p>
+          </section>
+        </div>
+        {recommendation.barrier !== null ? <p className="result-overview__barrier"><strong>主な阻害要因：</strong>{getBarrierLabel(recommendation.barrier)}</p> : null}
+        <p className="change-condition"><strong>結論が変わる条件：</strong>{recommendation.changeCondition}</p>
       </section>
 
       <section className="monthly-summary" aria-labelledby="monthly-heading">
@@ -284,13 +357,14 @@ export function ResultSummary({ result, headingRef, onEdit }: ResultSummaryProps
         </dl>
       </section>
 
-      <PlanAchievementCard result={result} />
-      <UsageCards result={result} />
+      <UsageSummary result={result} />
+      <ValueEvidence result={result} />
+      <CompletionOpportunityCard result={result} />
       <PriceComparison result={result} />
 
       <section className="method-summary" aria-labelledby="method-summary-heading">
         <h3 id="method-summary-heading">この結果で点数化していないもの</h3>
-        <p>目的の種類、具体的な変化、阻害要因、設備数を、不明な重みで一つの総合点へ足していません。利用計画達成率と代替価値率は、100%の意味が異なるため別々に表示しています。</p>
+        <p>内容完了率、内容の適合、目的に沿う変化、付帯サービス、継続意向、安全上の回答を、不明な重みで一つの総合点へ足していません。回答はそれぞれ料金の根拠、価値の確認、次の行動、安全の優先順位に使っています。</p>
         <a className="text-link" href="/methodology">計算式と結果の読み方を確認する</a>
       </section>
 

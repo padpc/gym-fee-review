@@ -1512,6 +1512,14 @@ main {
   font-size: 0.9rem;
 }
 
+.home-panel__aside {
+  margin-top: 14px !important;
+  padding: 10px 12px;
+  color: #334b45;
+  background: #edf5f2;
+  border-left: 4px solid var(--brand);
+}
+
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1788,5 +1796,333 @@ main {
   .formula {
     padding: 10px 11px;
     font-size: 0.9rem;
+  }
+}
+
+/* G1第4回改訂: 目的活動・内容完了・実利用価値 */
+
+.question-context {
+  display: grid;
+  gap: 3px;
+  margin: 12px 0 0;
+  padding: 11px 13px;
+  color: #334b45;
+  background: #edf5f2;
+  border-left: 4px solid var(--brand);
+}
+
+.question-context strong {
+  font-size: 0.82rem;
+}
+
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.checkbox-card {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  background: #fff;
+  border: 2px solid #b7c6c1;
+  border-radius: 12px;
+  font-weight: 750;
+}
+
+.checkbox-card:hover,
+.checkbox-card--selected {
+  border-color: var(--brand);
+}
+
+.checkbox-card--selected {
+  background: #eef8f4;
+}
+
+.checkbox-card input {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--brand);
+}
+
+.checkbox-card input:focus-visible {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--focus);
+}
+
+.conditional-panel,
+.optional-comparison {
+  margin-top: 18px;
+  padding: clamp(14px, 3vw, 20px);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.conditional-panel > h4,
+.optional-comparison > h4 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.conditional-panel > p,
+.optional-comparison > p {
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+.safety-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  color: #511a1a;
+  background: #fff0f0;
+  border-left: 5px solid var(--danger);
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.condition-list {
+  margin: 8px 0 0;
+  padding-left: 22px;
+}
+
+.result-overview {
+  margin-top: 18px;
+  padding: clamp(18px, 4vw, 28px);
+  color: #fff;
+  background: var(--brand-dark);
+  border-left: 7px solid #61c7ad;
+  border-radius: 15px;
+}
+
+.result-overview--safety-first {
+  background: #611f1f;
+  border-left-color: #f1a0a0;
+}
+
+.result-overview .eyebrow {
+  color: #bce7db;
+}
+
+.result-overview--safety-first .eyebrow {
+  color: #ffd0d0;
+}
+
+.result-overview h3 {
+  margin: 3px 0 0;
+  font-size: clamp(1.35rem, 3.2vw, 1.9rem);
+  line-height: 1.35;
+}
+
+.result-overview__reason {
+  margin: 8px 0 0;
+}
+
+.decision-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.decision-grid > section {
+  min-width: 0;
+  padding: 13px;
+  background: rgb(255 255 255 / 10%);
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 10px;
+}
+
+.decision-grid h4 {
+  margin: 0;
+  color: #c9eee4;
+  font-size: 0.82rem;
+}
+
+.result-overview--safety-first .decision-grid h4 {
+  color: #ffd8d8;
+}
+
+.decision-grid p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 750;
+}
+
+.result-overview__barrier {
+  margin: 12px 0 0;
+}
+
+.result-metrics--four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.change-condition {
+  margin: 14px 0 0;
+  padding: 11px 12px;
+  color: var(--ink);
+  background: #fff;
+  border-radius: 9px;
+}
+
+.result-section {
+  margin-top: 18px;
+  padding: clamp(16px, 3vw, 24px);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.result-section > h3,
+.result-section__heading h3 {
+  margin: 0;
+}
+
+.result-section__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.usage-rate-grid,
+.quality-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.usage-rate-grid > div,
+.quality-grid > div {
+  min-width: 0;
+  padding: 13px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+}
+
+.usage-rate-grid dt,
+.quality-grid dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.usage-rate-grid dd,
+.quality-grid dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 750;
+}
+
+.usage-rate-grid dd strong {
+  color: var(--brand-dark);
+  font-size: clamp(1.25rem, 3vw, 1.65rem);
+}
+
+.service-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.service-tags li {
+  padding: 7px 10px;
+  color: #16342d;
+  background: #e5f3ee;
+  border: 1px solid #b9d7cc;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.completion-opportunity {
+  background: #fff8e9;
+  border-color: #e2c171;
+}
+
+.completion-opportunity__values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.completion-opportunity__values > div {
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #ead7aa;
+  border-radius: 9px;
+}
+
+.completion-opportunity__values span,
+.completion-opportunity__values strong {
+  display: block;
+}
+
+.completion-opportunity__values span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.completion-opportunity__values strong {
+  margin-top: 4px;
+  color: var(--brand-dark);
+  font-size: 1.25rem;
+}
+
+@media (max-width: 840px) {
+  .decision-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .decision-grid > section:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .result-metrics,
+  .result-metrics--four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .choice-grid--purpose,
+  .choice-grid--four,
+  .choice-grid--bands,
+  .decision-grid,
+  .usage-rate-grid,
+  .quality-grid,
+  .completion-opportunity__values,
+  .result-metrics,
+  .result-metrics--four {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-grid > section:last-child {
+    grid-column: auto;
+  }
+
+  .checkbox-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .result-section__heading {
+    display: grid;
+  }
+}
+
+@media (max-width: 380px) {
+  .checkbox-grid {
+    grid-template-columns: 1fr;
   }
 }
