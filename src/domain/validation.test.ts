@@ -4,338 +4,229 @@ import {
   rawRequiresBarrier,
   validateAssessmentInput,
   type RawAssessmentInput,
+  type RawValueEntry,
 } from './validation';
 
-function validRaw(): RawAssessmentInput {
+function rawValue(overrides: Partial<RawValueEntry> = {}): RawValueEntry {
   return {
-    ...createEmptyRawAssessmentInput(),
-    monthlyFee: '８０００',
-    additionalFeesMode: 'none' as const,
-    visitMode: 'exact' as const,
-    exactVisits: '8',
-    purpose: 'strength' as const,
-    activity: 'strength-training' as const,
-    performedMode: 'exact' as const,
-    performedCount: '7',
-    completedMode: 'exact' as const,
-    completedCount: '7',
-    contentFit: 'fits' as const,
-    purposeEvidence: 'improved' as const,
-    usedServices: ['specialty-equipment'],
-    continuation: 'choose' as const,
-    safety: 'no-concern' as const,
+    id: 'training',
+    customLabel: '',
+    frequency: 'often',
+    fulfillment: 'met',
+    payReason: 'yes',
+    ...overrides,
   };
 }
 
-describe('GFR-G1R4 入力検証', () => {
-  it('費用・V・S・F・質・変化・付帯価値・再選択・安全を正規化する', () => {
-    const result = validateAssessmentInput({
-      ...validRaw(),
+function validRaw(overrides: Partial<RawAssessmentInput> = {}): RawAssessmentInput {
+  return {
+    ...createEmptyRawAssessmentInput(),
+    monthlyFee: '８０００',
+    additionalFeesMode: 'none',
+    visitMode: 'exact',
+    exactVisits: '8',
+    values: [rawValue()],
+    feeBurden: 'comfortable',
+    continuation: 'choose',
+    ...overrides,
+  };
+}
+
+describe('R5 入力検証', () => {
+  it('料金・回数・館内時間・複数価値・判断を正規化する', () => {
+    const result = validateAssessmentInput(validRaw({
       additionalFeesMode: 'known',
       monthlyFixedFee: '５００',
       annualFee: '１２００',
-    });
+      timeMode: 'total-hours',
+      totalHours: '９．５',
+      values: [
+        rawValue(),
+        rawValue({ id: 'bath-sauna', frequency: 'several', fulfillment: 'partly' }),
+      ],
+    }));
     expect(result).toEqual({
       ok: true,
       value: {
         fees: { monthlyFeeYen: 8_000, monthlyFixedFeeYen: 500, annualFeeYen: 1_200 },
         visits: { kind: 'exact', visits: 8 },
-        time: { kind: 'unknown' },
-        purpose: {
-          purpose: 'strength',
-          activity: 'strength-training',
-          performed: { kind: 'exact', count: 7 },
-          completed: { kind: 'exact', count: 7 },
-          contentFit: 'fits',
-          evidence: 'improved',
-        },
-        usedServices: ['specialty-equipment'],
+        time: { kind: 'total-hours', totalHours: 9.5 },
+        values: [
+          { id: 'training', customLabel: '', frequency: 'often', fulfillment: 'met', payReason: 'yes' },
+          { id: 'bath-sauna', customLabel: '', frequency: 'several', fulfillment: 'partly', payReason: 'yes' },
+        ],
+        feeBurden: 'comfortable',
         continuation: 'choose',
-        safety: 'no-concern',
         barrier: null,
-        alternative: { availability: 'unknown' },
       },
     });
   });
 
-  it('正確値で0 ≤ F ≤ S ≤ Vを検証する', () => {
-    const validZero = validateAssessmentInput({
-      ...validRaw(),
-      exactVisits: '0',
-      performedCount: '0',
-      completedCount: '0',
-      purposeEvidence: 'unchanged',
-      barrier: 'schedule',
-    });
-    expect(validZero.ok).toBe(true);
-
-    const sOverV = validateAssessmentInput({ ...validRaw(), exactVisits: '4', performedCount: '5' });
-    expect(sOverV.ok).toBe(false);
-    if (!sOverV.ok) expect(sOverV.errors['performed-count']).toContain('4回以下');
-
-    const fOverS = validateAssessmentInput({ ...validRaw(), completedCount: '8' });
-    expect(fOverS.ok).toBe(false);
-    if (!fOverS.ok) expect(fOverS.errors['completed-count']).toContain('S以下');
+  it('回数帯1–2/3–4/5–8/9+と回数不明を正規化する', () => {
+    const expectations = [
+      ['monthly-1-2', { kind: 'bounded', bandId: 'monthly-1-2', min: 1, max: 2 }],
+      ['monthly-3-4', { kind: 'bounded', bandId: 'monthly-3-4', min: 3, max: 4 }],
+      ['monthly-5-8', { kind: 'bounded', bandId: 'monthly-5-8', min: 5, max: 8 }],
+      ['monthly-9-plus', { kind: 'at-least', bandId: 'monthly-9-plus', min: 9 }],
+    ] as const;
+    for (const [visitBand, expected] of expectations) {
+      const result = validateAssessmentInput(validRaw({ visitMode: 'range', visitBand }));
+      expect(result.ok && result.value.visits).toEqual(expected);
+    }
+    const unknown = validateAssessmentInput(validRaw({ visitMode: 'unknown' }));
+    expect(unknown.ok && unknown.value.visits).toEqual({ kind: 'unknown' });
   });
 
-  it('追加費用ありで現行の月額・年額が全て空または0なら拒否する', () => {
-    for (const values of [
-      { monthlyFixedFee: '', annualFee: '' },
-      { monthlyFixedFee: '0', annualFee: '0' },
-    ]) {
-      const result = validateAssessmentInput({
-        ...validRaw(),
-        additionalFeesMode: 'known',
-        ...values,
-      });
+  it('館内利用時間は合計・平均を検証し、未入力なら不明として通す', () => {
+    const average = validateAssessmentInput(validRaw({
+      timeMode: 'average-minutes', averageMinutes: '90',
+    }));
+    expect(average.ok && average.value.time).toEqual({ kind: 'average-minutes', averageMinutes: 90 });
+
+    const omitted = validateAssessmentInput(validRaw({
+      timeMode: 'unknown', totalHours: 'invalid', averageMinutes: 'invalid',
+    }));
+    expect(omitted.ok && omitted.value.time).toEqual({ kind: 'unknown' });
+
+    const zeroVisitsWithTime = validateAssessmentInput(validRaw({
+      exactVisits: '0', timeMode: 'total-hours', totalHours: '1.0',
+    }));
+    expect(zeroVisitsWithTime.ok).toBe(false);
+    if (!zeroVisitsWithTime.ok) {
+      expect(zeroVisitsWithTime.errors['total-hours']).toContain('館内利用時間');
+    }
+
+    const zeroVisitsWithAverage = validateAssessmentInput(validRaw({
+      exactVisits: '0', timeMode: 'average-minutes', averageMinutes: '90',
+    }));
+    expect(zeroVisitsWithAverage.ok).toBe(false);
+    if (!zeroVisitsWithAverage.ok) {
+      expect(zeroVisitsWithAverage.errors['average-minutes']).toContain('来館0回');
+    }
+  });
+
+  it('その他は名称1～80文字必須で、他IDの名称は破棄する', () => {
+    const other = validateAssessmentInput(validRaw({
+      values: [rawValue({ id: 'other', customLabel: '  リモートワーク前の気分転換  ' })],
+    }));
+    expect(other.ok && other.value.values[0]).toEqual({
+      id: 'other',
+      customLabel: 'リモートワーク前の気分転換',
+      frequency: 'often',
+      fulfillment: 'met',
+      payReason: 'yes',
+    });
+
+    for (const customLabel of ['', 'あ'.repeat(81)]) {
+      const invalid = validateAssessmentInput(validRaw({
+        values: [rawValue({ id: 'other', customLabel })],
+      }));
+      expect(invalid.ok).toBe(false);
+      if (!invalid.ok) expect(invalid.errors['value-other-custom-label']).toContain('1～80文字');
+    }
+
+    const ignored = validateAssessmentInput(validRaw({
+      values: [rawValue({ customLabel: '無視される' })],
+    }));
+    expect(ignored.ok && ignored.value.values[0]?.customLabel).toBe('');
+  });
+
+  it('選択した各価値について頻度・期待充足・支払理由を必須にする', () => {
+    for (const [field, value] of [
+      ['frequency', rawValue({ frequency: '' })],
+      ['fulfillment', rawValue({ fulfillment: '' })],
+      ['pay-reason', rawValue({ payReason: '' })],
+    ] as const) {
+      const result = validateAssessmentInput(validRaw({ values: [value] }));
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.errors['additional-fees-mode']).toBeTruthy();
+      if (!result.ok) expect(result.errors[`value-training-${field}`]).toBeTruthy();
     }
   });
 
-  it('V範囲ではS・Fの正確値が既知上限を超える入力だけを拒否する', () => {
-    const valid = validateAssessmentInput({
-      ...validRaw(),
-      visitMode: 'range',
-      visitBand: 'weekly-1',
-      performedCount: '6',
-      completedCount: '5',
-      barrier: 'none',
-    });
-    expect(valid.ok).toBe(true);
+  it('価値なしは明示が必要で、価値項目との同時選択と重複を拒否する', () => {
+    const none = validateAssessmentInput(validRaw({
+      values: [], noValueUsed: true, continuation: 'unsure', barrier: 'temporary',
+    }));
+    expect(none.ok && none.value.values).toEqual([]);
 
-    const invalid = validateAssessmentInput({
-      ...validRaw(),
-      visitMode: 'range',
-      visitBand: 'weekly-1',
-      performedCount: '7',
-      completedCount: '7',
-    });
-    expect(invalid.ok).toBe(false);
-    if (!invalid.ok) expect(invalid.errors['performed-count']).toContain('6回以下');
-  });
+    const neither = validateAssessmentInput(validRaw({ values: [], noValueUsed: false }));
+    expect(neither.ok).toBe(false);
+    if (!neither.ok) expect(neither.errors.values).toBeTruthy();
 
-  it('S・Fの不明を0へ変換せず、V不明でもS・F既知を受け付ける', () => {
-    const unknown = validateAssessmentInput({
-      ...validRaw(),
-      performedMode: 'unknown',
-      performedCount: 'invalid',
-      completedMode: 'unknown',
-      completedCount: 'invalid',
-      contentFit: 'unknown',
-      purposeEvidence: 'unknown',
-      continuation: 'unknown',
-      barrier: 'unknown',
-    });
-    expect(unknown.ok).toBe(true);
-    if (unknown.ok) {
-      expect(unknown.value.purpose.performed).toEqual({ kind: 'unknown' });
-      expect(unknown.value.purpose.completed).toEqual({ kind: 'unknown' });
-    }
-
-    const knownWithUnknownV = validateAssessmentInput({
-      ...validRaw(),
-      visitMode: 'unknown',
-    });
-    expect(knownWithUnknownV.ok).toBe(true);
-  });
-
-  it('実運動時間は任意で、入力時だけ検証し、来館0回との矛盾を拒否する', () => {
-    const total = validateAssessmentInput({
-      ...validRaw(),
-      timeMode: 'total-hours',
-      totalHours: '９．５',
-    });
-    expect(total.ok && total.value.time).toEqual({ kind: 'total-hours', totalHours: 9.5 });
-
-    const invalid = validateAssessmentInput({
-      ...validRaw(),
-      exactVisits: '0',
-      performedCount: '0',
-      completedCount: '0',
-      timeMode: 'total-hours',
-      totalHours: '1.5',
-      purposeEvidence: 'unchanged',
-      barrier: 'none',
-    });
-    expect(invalid.ok).toBe(false);
-    if (!invalid.ok) {
-      expect(invalid.errors['total-hours']).toContain('実運動時間');
-      expect(invalid.errors['total-hours']).not.toContain('滞在時間');
-    }
-
-    expect(validateAssessmentInput({
-      ...validRaw(),
-      timeMode: 'unknown',
-      totalHours: 'invalid',
-      averageMinutes: 'invalid',
-    }).ok).toBe(true);
-  });
-
-  it('付帯サービスの特になしと他項目を同時に許さず、重複は正規化する', () => {
-    const conflict = validateAssessmentInput({
-      ...validRaw(),
-      usedServices: ['none', 'pool'],
-    });
+    const conflict = validateAssessmentInput(validRaw({ noValueUsed: true }));
     expect(conflict.ok).toBe(false);
-    if (!conflict.ok) expect(conflict.errors['used-services']).toContain('同時');
+    if (!conflict.ok) expect(conflict.errors.values).toContain('同時');
 
-    const duplicate = validateAssessmentInput({
-      ...validRaw(),
-      usedServices: ['pool', 'pool'],
-    });
-    expect(duplicate.ok).toBe(true);
-    if (duplicate.ok) expect(duplicate.value.usedServices).toEqual(['pool']);
+    const duplicate = validateAssessmentInput(validRaw({ values: [rawValue(), rawValue()] }));
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) expect(duplicate.errors.values).toContain('重複');
   });
 
-  it('阻害要因は問題時だけ必須で、非表示の古い値を使用しない', () => {
-    const strong = validateAssessmentInput({ ...validRaw(), barrier: 'travel' });
-    expect(strong.ok).toBe(true);
-    if (strong.ok) expect(strong.value.barrier).toBeNull();
+  it('強い価値・無理ない会費・継続意向の全てが揃う場合だけ阻害要因を要求しない', () => {
+    expect(rawRequiresBarrier(validRaw())).toBe(false);
+    expect(validateAssessmentInput(validRaw({ barrier: 'travel' }))).toEqual(
+      validateAssessmentInput(validRaw({ barrier: '' })),
+    );
+
+    for (const changes of [
+      { values: [rawValue({ payReason: 'unsure' })] },
+      { feeBurden: 'slight-burden' as const },
+      { continuation: 'unsure' as const },
+      { noValueUsed: true, values: [], continuation: 'unsure' as const },
+    ]) {
+      const raw = validRaw(changes);
+      expect(rawRequiresBarrier(raw)).toBe(true);
+      const missing = validateAssessmentInput(raw);
+      expect(missing.ok).toBe(false);
+      if (!missing.ok) expect(missing.errors.barrier).toBeTruthy();
+    }
+  });
+
+  it('阻害要因が必要な時だけ採用し、無効値を拒否する', () => {
+    const result = validateAssessmentInput(validRaw({
+      feeBurden: 'slight-burden', barrier: 'price',
+    }));
+    expect(result.ok && result.value.barrier).toBe('price');
+
+    const invalid = validateAssessmentInput(validRaw({
+      feeBurden: 'slight-burden', barrier: 'none' as never,
+    }));
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.errors.barrier).toBeTruthy();
+  });
+
+  it('料金の追加費用モードと主要必須項目を検証する', () => {
+    const additionalEmpty = validateAssessmentInput(validRaw({
+      additionalFeesMode: 'known', monthlyFixedFee: '', annualFee: '',
+    }));
+    expect(additionalEmpty.ok).toBe(false);
+    if (!additionalEmpty.ok) expect(additionalEmpty.errors['additional-fees-mode']).toBeTruthy();
 
     const missing = validateAssessmentInput({
-      ...validRaw(),
-      completedCount: '5',
-      barrier: '' as const,
-    });
-    expect(missing.ok).toBe(false);
-    if (!missing.ok) expect(missing.errors.barrier).toBeTruthy();
-
-    const known = validateAssessmentInput({
-      ...validRaw(),
-      completedCount: '5',
-      barrier: 'crowding',
-    });
-    expect(known.ok).toBe(true);
-    if (known.ok) expect(known.value.barrier).toBe('crowding');
-  });
-
-  it('安全懸念時は主提案優先のため阻害要因を要求しない', () => {
-    const raw = {
-      ...validRaw(),
-      safety: 'concern' as const,
-      completedCount: '0',
-      contentFit: 'does-not-fit' as const,
-      purposeEvidence: 'worse' as const,
-      continuation: 'not-choose' as const,
-      barrier: '' as const,
-    };
-    expect(rawRequiresBarrier(raw)).toBe(false);
-    const result = validateAssessmentInput(raw);
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.barrier).toBeNull();
-  });
-
-  it('公式代替の料金・同等条件・確認を受け付ける', () => {
-    const result = validateAssessmentInput({
-      ...validRaw(),
-      alternativeAvailability: 'known',
-      alternativeSourceConfirmed: true,
-      alternativeAdditionalFeesMode: 'none',
-      alternativeKind: 'per-visit',
-      alternativeName: '  都度利用  ',
-      alternativePerVisitFee: '１８００',
-      equivalenceServices: 'meets',
-      equivalenceHours: 'meets',
-      equivalenceLocation: 'not-required',
-    });
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.alternative).toEqual({
-        availability: 'known',
-        name: '都度利用',
-        pricing: { kind: 'per-visit', perVisitFeeYen: 1_800 },
-        monthlyFixedFeeYen: 0,
-        annualFeeYen: 0,
-        requiredServiceMonthlyYen: 0,
-        equivalence: {
-          services: 'meets',
-          hours: 'meets',
-          location: 'not-required',
-        },
-      });
-    }
-  });
-
-  it('公式料金の確認が未チェックなら代替比較を拒否する', () => {
-    const result = validateAssessmentInput({
-      ...validRaw(),
-      alternativeAvailability: 'known',
-      alternativeSourceConfirmed: false,
-      alternativeAdditionalFeesMode: 'none',
-      alternativeKind: 'monthly',
-      alternativeName: '比較プラン',
-      alternativeMonthlyFee: '5000',
-      equivalenceServices: 'meets',
-      equivalenceHours: 'meets',
-      equivalenceLocation: 'meets',
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors['alternative-source-confirmed']).toBeTruthy();
-  });
-
-  it('代替の追加費用ありで3費用が全て空または0なら拒否する', () => {
-    for (const values of [
-      {
-        alternativeMonthlyFixedFee: '',
-        alternativeAnnualFee: '',
-        alternativeServiceMonthlyFee: '',
-      },
-      {
-        alternativeMonthlyFixedFee: '0',
-        alternativeAnnualFee: '0',
-        alternativeServiceMonthlyFee: '0',
-      },
-    ]) {
-      const result = validateAssessmentInput({
-        ...validRaw(),
-        alternativeAvailability: 'known',
-        alternativeSourceConfirmed: true,
-        alternativeAdditionalFeesMode: 'known',
-        alternativeKind: 'monthly',
-        alternativeName: '比較プラン',
-        alternativeMonthlyFee: '5000',
-        equivalenceServices: 'meets',
-        equivalenceHours: 'meets',
-        equivalenceLocation: 'meets',
-        ...values,
-      });
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.errors['alternative-additional-fees-mode']).toBeTruthy();
-      }
-    }
-  });
-
-  it('代替なしでは非表示の代替値を検証・使用しない', () => {
-    expect(validateAssessmentInput({
-      ...validRaw(),
-      alternativeAvailability: 'unknown',
-      alternativeKind: 'monthly',
-      alternativeMonthlyFee: 'invalid',
-      equivalenceServices: 'does-not-meet',
-      alternativeSourceConfirmed: false,
-    }).ok).toBe(true);
-  });
-
-  it('主要な必須質問を項目別エラーにする', () => {
-    const result = validateAssessmentInput({
       ...createEmptyRawAssessmentInput(),
       monthlyFee: '8000',
       additionalFeesMode: 'none',
     });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.errors['visit-mode']).toBeTruthy();
+      expect(missing.errors.values).toBeTruthy();
+      expect(missing.errors['fee-burden']).toBeTruthy();
+      expect(missing.errors.continuation).toBeTruthy();
+    }
+  });
+
+  it('型を迂回した不正な選択値も「不明」として採用しない', () => {
+    const result = validateAssessmentInput(validRaw({
+      additionalFeesMode: 'invalid' as never,
+      visitMode: 'invalid' as never,
+      timeMode: 'invalid' as never,
+    }));
     expect(result.ok).toBe(false);
     if (!result.ok) {
+      expect(result.errors['additional-fees-mode']).toBeTruthy();
       expect(result.errors['visit-mode']).toBeTruthy();
-      expect(result.errors.purpose).toBeTruthy();
-      expect(result.errors.activity).toBeTruthy();
-      expect(result.errors['performed-mode']).toBeTruthy();
-      expect(result.errors['completed-mode']).toBeTruthy();
-      expect(result.errors['content-fit']).toBeTruthy();
-      expect(result.errors['purpose-evidence']).toBeTruthy();
-      expect(result.errors['used-services']).toBeTruthy();
-      expect(result.errors.continuation).toBeTruthy();
-      expect(result.errors.safety).toBeTruthy();
+      expect(result.errors['time-mode']).toBeTruthy();
     }
   });
 });

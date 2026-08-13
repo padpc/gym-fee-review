@@ -1,556 +1,457 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assessPrice,
-  assessPurpose,
   buildAssessmentResult,
-  calculateActivityRate,
-  calculateAlternativeMonthlyCost,
-  calculateCompletionRate,
+  calculateMonthlyDuration,
+  calculateMonthlyEquivalent,
+  calculatePerHourResult,
   calculatePerVisitResult,
-  getActivityAlternativeRequirement,
-  getActivityCompletionExample,
-  getActivityQualityQuestion,
-  getPurposeRecheckStep,
-  requiresBarrier,
-  type KnownAlternative,
   type ValidatedAssessmentInput,
+  type ValueAssessmentInput,
 } from './assessment';
 
-const fees = { monthlyFeeYen: 8_000, monthlyFixedFeeYen: 0, annualFeeYen: 0 };
-
-function alternative(
-  pricing: KnownAlternative['pricing'],
-  services: KnownAlternative['equivalence']['services'] = 'meets',
-): KnownAlternative {
+function value(overrides: Partial<ValueAssessmentInput> = {}): ValueAssessmentInput {
   return {
-    availability: 'known',
-    name: '比較プラン',
-    pricing,
-    monthlyFixedFeeYen: 0,
-    annualFeeYen: 0,
-    requiredServiceMonthlyYen: 0,
-    equivalence: { services, hours: 'meets', location: 'not-required' },
+    id: 'training',
+    customLabel: '',
+    frequency: 'often',
+    fulfillment: 'met',
+    payReason: 'yes',
+    ...overrides,
   };
 }
 
 function input(overrides: Partial<ValidatedAssessmentInput> = {}): ValidatedAssessmentInput {
   return {
-    fees,
+    fees: { monthlyFeeYen: 8_000, monthlyFixedFeeYen: 0, annualFeeYen: 0 },
     visits: { kind: 'exact', visits: 8 },
     time: { kind: 'unknown' },
-    purpose: {
-      purpose: 'strength',
-      activity: 'strength-training',
-      performed: { kind: 'exact', count: 7 },
-      completed: { kind: 'exact', count: 7 },
-      contentFit: 'fits',
-      evidence: 'improved',
-    },
-    usedServices: ['specialty-equipment'],
+    values: [value()],
+    feeBurden: 'comfortable',
     continuation: 'choose',
-    safety: 'no-concern',
     barrier: null,
-    alternative: { availability: 'unknown' },
     ...overrides,
   };
 }
 
-describe('GFR-G1R4 C・V・S・F', () => {
-  it('S÷Vを正確値・V範囲・V不明のまま返す', () => {
-    expect(calculateActivityRate(
-      { kind: 'exact', count: 6 },
-      { kind: 'exact', visits: 8 },
-    )).toEqual({ kind: 'exact', numerator: 6, denominator: 8, percent: 75 });
+describe('R5 費用計算', () => {
+  it('必須月額と年会費の月割りを1/12円単位で計算する', () => {
+    expect(calculateMonthlyEquivalent({
+      monthlyFeeYen: 8_000,
+      monthlyFixedFeeYen: 500,
+      annualFeeYen: 1_201,
+    })).toEqual({ units: 103_201, roundedYen: 8_600 });
+  });
 
-    expect(calculateActivityRate(
-      { kind: 'exact', count: 4 },
-      { kind: 'bounded', bandId: 'weekly-1', min: 4, max: 6 },
+  it('正確値・範囲・9回以上を中央値化せず返す', () => {
+    expect(calculatePerVisitResult(96_000, { kind: 'exact', visits: 8 })).toEqual({
+      kind: 'exact', visits: 8, yenPerVisit: 1_000, unusedPaymentYen: 0,
+    });
+    expect(calculatePerVisitResult(96_000, {
+      kind: 'bounded', bandId: 'monthly-3-4', min: 3, max: 4,
+    })).toEqual({
+      kind: 'bounded', bandId: 'monthly-3-4', minVisits: 3, maxVisits: 4,
+      minYenPerVisit: 2_000, maxYenPerVisit: 2_667,
+    });
+    expect(calculatePerVisitResult(96_000, {
+      kind: 'at-least', bandId: 'monthly-9-plus', min: 9,
+    })).toEqual({
+      kind: 'at-least', bandId: 'monthly-9-plus', minVisits: 9, maxYenPerVisit: 889,
+    });
+  });
+
+  it('回数不明では理由と1/2/4/8/12回シナリオを返す', () => {
+    expect(calculatePerVisitResult(96_000, { kind: 'unknown' })).toEqual({
+      kind: 'unknown',
+      reason: 'visits-unknown',
+      scenarios: [
+        { visits: 1, yenPerVisit: 8_000 },
+        { visits: 2, yenPerVisit: 4_000 },
+        { visits: 4, yenPerVisit: 2_000 },
+        { visits: 8, yenPerVisit: 1_000 },
+        { visits: 12, yenPerVisit: 667 },
+      ],
+    });
+  });
+
+  it('館内利用時間の合計・平均と未算出理由を区別する', () => {
+    expect(calculateMonthlyDuration(
+      { kind: 'exact', visits: 8 },
+      { kind: 'total-hours', totalHours: 10 },
+    )).toEqual({ kind: 'exact', minutes: 600 });
+    expect(calculateMonthlyDuration(
+      { kind: 'bounded', bandId: 'monthly-3-4', min: 3, max: 4 },
+      { kind: 'average-minutes', averageMinutes: 90 },
+    )).toEqual({ kind: 'bounded', minMinutes: 270, maxMinutes: 360 });
+    expect(calculateMonthlyDuration(
+      { kind: 'unknown' },
+      { kind: 'average-minutes', averageMinutes: 90 },
+    )).toEqual({ kind: 'unknown', reason: 'average-needs-visits' });
+    expect(calculateMonthlyDuration(
+      { kind: 'exact', visits: 8 },
+      { kind: 'unknown' },
+    )).toEqual({ kind: 'unknown', reason: 'facility-time-not-entered' });
+    expect(calculatePerHourResult(96_000, { kind: 'exact', minutes: 0 })).toEqual({
+      kind: 'unknown', reason: 'zero-time',
+    });
+    expect(calculatePerHourResult(
+      96_000,
+      { kind: 'unknown', reason: 'average-needs-visits' },
+      60,
     )).toEqual({
-      kind: 'bounded',
-      numerator: 4,
-      minDenominator: 4,
-      maxDenominator: 6,
-      minPercent: 66.7,
-      maxPercent: 100,
-    });
-
-    expect(calculateActivityRate(
-      { kind: 'exact', count: 4 },
-      { kind: 'unknown' },
-    )).toEqual({ kind: 'unknown', reason: 'visits-unknown' });
-  });
-
-  it('0を含むV範囲とS=0を除算しない', () => {
-    expect(calculateActivityRate(
-      { kind: 'exact', count: 0 },
-      { kind: 'bounded', bandId: 'monthly-1-3', min: 0, max: 3 },
-    )).toEqual({ kind: 'zero-denominator', numerator: 0 });
-  });
-
-  it('F÷SとC÷S・C÷Fを分け、F<Sの完了時単価を返す', () => {
-    const result = assessPurpose(
-      96_000,
-      { kind: 'exact', visits: 8 },
-      {
-        purpose: 'strength',
-        activity: 'strength-training',
-        performed: { kind: 'exact', count: 7 },
-        completed: { kind: 'exact', count: 5 },
-        contentFit: 'fits',
-        evidence: 'improved',
-      },
-    );
-    expect(result.activityRate).toMatchObject({ kind: 'exact', percent: 87.5 });
-    expect(result.completionRate).toMatchObject({ kind: 'exact', percent: 71.4 });
-    expect(result.yenPerPerformed).toBe(1_143);
-    expect(result.yenPerCompleted).toBe(1_600);
-    expect(result.completionOpportunity).toEqual({
-      kind: 'available',
-      performedCount: 7,
-      completedCount: 5,
-      incompleteCount: 2,
-      currentYenPerCompleted: 1_600,
-      ifAllPerformedCompletedYen: 1_143,
+      kind: 'unknown',
+      reason: 'average-needs-visits',
+      scenarios: [
+        { visits: 1, totalMinutes: 60, yenPerHour: 8_000 },
+        { visits: 2, totalMinutes: 120, yenPerHour: 4_000 },
+        { visits: 4, totalMinutes: 240, yenPerHour: 2_000 },
+        { visits: 8, totalMinutes: 480, yenPerHour: 1_000 },
+        { visits: 12, totalMinutes: 720, yenPerHour: 667 },
+      ],
     });
   });
 
-  it('0回を除算せず、不明を0へ変換しない', () => {
-    expect(calculateCompletionRate(
-      { kind: 'exact', count: 0 },
-      { kind: 'exact', count: 0 },
-    )).toEqual({ kind: 'zero-denominator', numerator: 0 });
-
-    const result = assessPurpose(
-      96_000,
-      { kind: 'unknown' },
-      {
-        purpose: 'health',
-        activity: 'cardio',
-        performed: { kind: 'unknown' },
-        completed: { kind: 'unknown' },
-        contentFit: 'unknown',
-        evidence: 'unknown',
-      },
-    );
-    expect(result.performedCostStatus).toBe('unknown');
-    expect(result.completedCostStatus).toBe('unknown');
-    expect(result.completionOpportunity).toEqual({ kind: 'unknown' });
+  it('館内利用時間だけの変更は時間単価だけを変える', () => {
+    const baseline = buildAssessmentResult(input());
+    const changed = buildAssessmentResult(input({
+      time: { kind: 'total-hours', totalHours: 10 },
+    }));
+    expect(changed.perHour).toEqual({ kind: 'exact', minutes: 600, yenPerHour: 800 });
+    expect(changed.monthly).toEqual(baseline.monthly);
+    expect(changed.perVisit).toEqual(baseline.perVisit);
+    expect(changed.valueSummary).toEqual(baseline.valueSummary);
+    expect(changed.recommendation).toEqual({
+      ...baseline.recommendation,
+      nextStep: '次の1か月も同じ使い方を続け、月末に同じ条件で再確認する。',
+    });
   });
 
-  it('ドメイン境界でもF>SとS>Vを拒否する', () => {
-    expect(() => assessPurpose(
-      96_000,
-      { kind: 'exact', visits: 4 },
-      {
-        purpose: 'strength',
-        activity: 'strength-training',
-        performed: { kind: 'exact', count: 5 },
-        completed: { kind: 'exact', count: 4 },
-        contentFit: 'fits',
-        evidence: 'improved',
-      },
-    )).toThrow('performed count');
-
-    expect(() => calculateCompletionRate(
-      { kind: 'exact', count: 5 },
-      { kind: 'exact', count: 4 },
-    )).toThrow('completed count');
+  it('来館0回と各未算出理由を結果に構造化する', () => {
+    const zero = buildAssessmentResult(input({
+      visits: { kind: 'exact', visits: 0 },
+    }));
+    expect(zero.costUnavailableReasons).toEqual({
+      perVisit: 'zero-visits', perHour: 'facility-time-not-entered',
+    });
+    const unknown = buildAssessmentResult(input({
+      visits: { kind: 'unknown' },
+      time: { kind: 'average-minutes', averageMinutes: 60 },
+    }));
+    expect(unknown.costUnavailableReasons).toEqual({
+      perVisit: 'visits-unknown', perHour: 'average-needs-visits',
+    });
+    expect(unknown.perHour.kind === 'unknown' && unknown.perHour.scenarios).toHaveLength(5);
   });
 });
-describe('GFR-G1R4 目的・活動・公式代替', () => {
-  it('目的は再確認行動を、主活動は完了・質・代替条件を変える', () => {
-    expect(getPurposeRecheckStep('strength')).toContain('重量・回数・フォーム');
-    expect(getPurposeRecheckStep('endurance')).toContain('時間・距離・速度');
-    expect(getPurposeRecheckStep('stress')).toContain('利用前後の気分');
-    expect(getActivityCompletionExample('strength-training')).toContain('種目とセット');
-    expect(getActivityCompletionExample('studio-class')).toContain('クラス');
-    expect(getActivityQualityQuestion('pool')).toContain('水中運動');
-    expect(getActivityAlternativeRequirement('coached-training')).toContain('指導');
+
+describe('R5 透明な価値判定', () => {
+  it('複数価値を独立して分類し、期待充足の件数を隠さない', () => {
+    const result = buildAssessmentResult(input({
+      values: [
+        value(),
+        value({ id: 'bath-sauna', frequency: 'several', fulfillment: 'partly', payReason: 'yes' }),
+        value({ id: 'social', frequency: 'once', fulfillment: 'unknown', payReason: 'unsure' }),
+        value({ id: 'pool', fulfillment: 'unmet', payReason: 'no' }),
+      ],
+    }));
+    expect(result.valueSummary.assessedCount).toBe(4);
+    expect(result.valueSummary.strongValues.map((item) => item.id)).toEqual(['training', 'bath-sauna']);
+    expect(result.valueSummary.tentativeValues.map((item) => item.id)).toEqual(['social']);
+    expect(result.valueSummary.nonPayingValues.map((item) => item.id)).toEqual(['pool']);
+    expect(result.valueSummary.fulfillmentCounts).toEqual([
+      { id: 'met', count: 1 },
+      { id: 'partly', count: 1 },
+      { id: 'unmet', count: 1 },
+      { id: 'unknown', count: 1 },
+    ]);
   });
 
-  it('都度型公式代替は来館Vでなく目的活動Sへ掛ける', () => {
-    const plan = alternative({ kind: 'per-visit', perVisitFeeYen: 1_000 });
-    expect(calculateAlternativeMonthlyCost(
-      plan,
-      { kind: 'exact', count: 6 },
-    )).toEqual({ kind: 'exact', units: 72_000, roundedYen: 6_000 });
-    expect(assessPrice(fees, { kind: 'exact', count: 6 }, plan)).toMatchObject({
-      status: 'alternative-lower',
-      alternativeMonthly: { kind: 'exact', roundedYen: 6_000 },
-      samePricePerActivity: { kind: 'exact', activities: 6, yenPerActivity: 1_333 },
-    });
+  it('風呂・温泉・サウナだけでも継続理由になり、回数不明でも価値結論を返す', () => {
+    const result = buildAssessmentResult(input({
+      visits: { kind: 'unknown' },
+      values: [value({ id: 'bath-sauna', frequency: 'unknown' })],
+    }));
+    expect(result.perVisit.kind).toBe('unknown');
+    expect(result.recommendation.kind).toBe('keep-reason');
+    expect(result.recommendation.reason).toContain('風呂・温泉・サウナ・休憩');
   });
 
-  it('実利用サービス条件を満たさない候補を低料金候補にしない', () => {
-    expect(assessPrice(
-      fees,
-      { kind: 'exact', count: 6 },
-      alternative({ kind: 'monthly', monthlyFeeYen: 5_000 }, 'does-not-meet'),
-    )).toMatchObject({
-      status: 'not-equivalent',
-      failedEquivalence: ['services'],
-      alternativeValueRatio: null,
-      difference: null,
-    });
+  it('強い価値があっても期待未達・不明なら確認へ分岐する', () => {
+    for (const fulfillment of ['unmet', 'unknown'] as const) {
+      const result = buildAssessmentResult(input({ values: [value({ fulfillment })] }));
+      expect(result.recommendation.kind).toBe('review-use');
+      expect(result.recommendation.headline).toContain('期待を満たすか');
+      expect(result.recommendation.nextStep).toContain('トレーニング設備');
+    }
+  });
+
+  it('費用負担と継続意向を強い価値より優先して判定する', () => {
+    const slight = buildAssessmentResult(input({
+      feeBurden: 'slight-burden', barrier: 'price',
+    }));
+    expect(slight.recommendation.kind).toBe('keep-review-price');
+    expect(slight.recommendation.nextStep).toContain('低料金プラン');
+
+    const severe = buildAssessmentResult(input({
+      feeBurden: 'review-needed', barrier: 'price',
+    }));
+    expect(severe.recommendation.kind).toBe('preserve-value-reduce-cost');
+
+    const unsure = buildAssessmentResult(input({
+      continuation: 'unsure', barrier: 'other',
+    }));
+    expect(unsure.recommendation.kind).toBe('review-use');
+
+    const no = buildAssessmentResult(input({
+      continuation: 'not-choose', barrier: 'travel',
+    }));
+    expect(no.recommendation.kind).toBe('review-contract');
+    expect(no.recommendation.nextStep).toContain('移動時間');
+  });
+
+  it('利用価値なしと利用したが支払理由なしを区別する', () => {
+    const none = buildAssessmentResult(input({
+      values: [], continuation: 'unsure', barrier: 'temporary',
+    }));
+    expect(none.recommendation.kind).toBe('confirm-use-condition');
+    expect(none.recommendation.reason).toContain('利用した価値項目はありません');
+
+    const noPayReason = buildAssessmentResult(input({
+      values: [value({ payReason: 'no' })], barrier: 'offering',
+    }));
+    expect(noPayReason.recommendation.kind).toBe('review-use');
+    expect(noPayReason.recommendation.reason).toContain('利用した内容はあります');
   });
 
   it.each([
-    ['hours', 'does-not-meet', 'not-equivalent'],
-    ['hours', 'unknown', 'equivalence-unknown'],
-    ['location', 'does-not-meet', 'not-equivalent'],
-    ['location', 'unknown', 'equivalence-unknown'],
-  ] as const)(
-    '低料金の公式代替でも%s=%sなら料金候補から除外する',
-    (dimension, answer, expectedStatus) => {
-      const plan = alternative({ kind: 'monthly', monthlyFeeYen: 5_000 });
-      plan.equivalence[dimension] = answer;
-      const result = assessPrice(fees, { kind: 'exact', count: 6 }, plan);
-      expect(result.status).toBe(expectedStatus);
-      expect(result.status).not.toBe('alternative-lower');
-      expect(result.difference).toBeNull();
-    },
-  );
-
-  it('実利用サービスを代替比較の必要条件へ変換する', () => {
-    expect(assessPrice(
-      fees,
-      { kind: 'exact', count: 6 },
-      alternative({ kind: 'monthly', monthlyFeeYen: 5_000 }),
-      ['pool', 'recovery'],
-    ).requiredAlternativeServiceLabels).toEqual(['プール', '温浴・サウナ']);
-    expect(assessPrice(
-      fees,
-      { kind: 'exact', count: 6 },
-      alternative({ kind: 'monthly', monthlyFeeYen: 5_000 }),
-      ['none'],
-    ).requiredAlternativeServiceLabels).toEqual([]);
-  });
-
-  it('代替なしでは得損を断定せずC÷Sだけを返す', () => {
-    expect(assessPrice(
-      fees,
-      { kind: 'exact', count: 4 },
-      { availability: 'unknown' },
-    )).toMatchObject({
-      status: 'insufficient',
-      insufficientReason: 'alternative-unknown',
-      samePricePerActivity: { kind: 'exact', activities: 4, yenPerActivity: 2_000 },
-    });
-  });
-});
-
-describe('GFR-G1R4 決定規則', () => {
-  it('完了・良い変化・再選択がそろえば継続候補にする', () => {
-    expect(buildAssessmentResult(input()).recommendation.kind).toBe('keep-current-candidate');
-  });
-
-  it('変化なしでは目的別の再確認行動を返す', () => {
-    const result = buildAssessmentResult(input({
-      purpose: {
-        purpose: 'endurance',
-        activity: 'cardio',
-        performed: { kind: 'exact', count: 7 },
-        completed: { kind: 'exact', count: 7 },
-        contentFit: 'fits',
-        evidence: 'unchanged',
-      },
-      barrier: 'none',
+    { payReason: 'no' as const, barrier: 'offering' as const, onceText: '1回程度利用しましたが、会費を払う理由にはならない', oftenText: '繰り返し利用しましたが、会費を払う理由にはならない' },
+    { payReason: 'unsure' as const, barrier: 'other' as const, onceText: '低頻度でも会費を払う理由になるか', oftenText: '繰り返し利用しても会費を払う理由が定まっていません' },
+  ])('支払理由が$payReasonでも利用頻度を結論根拠へ使う', ({ payReason, barrier, onceText, oftenText }) => {
+    const once = buildAssessmentResult(input({
+      values: [value({ frequency: 'once', payReason })],
+      barrier,
     }));
-    expect(result.recommendation.kind).toBe('review-training');
-    expect(result.recommendation.nextStep).toContain('時間・距離・速度');
-  });
-
-  it('F<Sまたは質不一致では主活動別の行動と阻害要因を使う', () => {
-    const result = buildAssessmentResult(input({
-      purpose: {
-        purpose: 'health',
-        activity: 'studio-class',
-        performed: { kind: 'exact', count: 7 },
-        completed: { kind: 'exact', count: 5 },
-        contentFit: 'fits',
-        evidence: 'improved',
-      },
-      barrier: 'crowding',
+    const often = buildAssessmentResult(input({
+      values: [value({ frequency: 'often', payReason })],
+      barrier,
     }));
-    expect(result.recommendation.kind).toBe('review-training');
-    expect(result.recommendation.headline).toBe('目的活動は行えているが、内容を見直す');
-    expect(result.recommendation.nextStep).toContain('クラスの内容・難易度・時間帯');
-    expect(result.recommendation.nextStep).toContain('混雑');
+    expect(once.recommendation.reason).toContain(onceText);
+    expect(often.recommendation.reason).toContain(oftenText);
+    expect(once.recommendation.reason).not.toBe(often.recommendation.reason);
   });
 
-  it('悪化時は会費価値を断定せず、料金判断より先の確認を案内する', () => {
-    const result = buildAssessmentResult(input({
-      purpose: {
-        purpose: 'strength',
-        activity: 'strength-training',
-        performed: { kind: 'exact', count: 7 },
-        completed: { kind: 'exact', count: 7 },
-        contentFit: 'fits',
-        evidence: 'worse',
-      },
-      barrier: 'equipment',
+  it.each(['no', 'unsure'] as const)('規則7でも支払理由$payReasonの利用頻度を結論根拠へ使う', (payReason) => {
+    const once = buildAssessmentResult(input({
+      values: [value({ frequency: 'once', payReason })],
+      feeBurden: 'slight-burden',
+      barrier: 'price',
     }));
-    expect(result.recommendation.headline).toBe('料金判断より先に、目的に合う内容か確認する');
-  });
-
-  it('再選択しない回答は契約確認へ変える', () => {
-    expect(buildAssessmentResult(input({
-      continuation: 'not-choose',
-      barrier: 'travel',
-    })).recommendation.kind).toBe('review-contract');
-  });
-
-  it('S=0と阻害要因は通い方の一行動へ変える', () => {
-    const result = buildAssessmentResult(input({
-      purpose: {
-        purpose: 'strength',
-        activity: 'strength-training',
-        performed: { kind: 'exact', count: 0 },
-        completed: { kind: 'exact', count: 0 },
-        contentFit: 'fits',
-        evidence: 'improved',
-      },
-      barrier: 'schedule',
+    const often = buildAssessmentResult(input({
+      values: [value({ frequency: 'often', payReason })],
+      feeBurden: 'slight-burden',
+      barrier: 'price',
     }));
-    expect(result.recommendation.kind).toBe('review-access');
-    expect(result.recommendation.nextStep).toContain('利用枠を一つ');
+    expect(once.recommendation.decisionRuleId).toBe('rule-7');
+    expect(often.recommendation.decisionRuleId).toBe('rule-7');
+    expect(once.recommendation.reason).not.toBe(often.recommendation.reason);
   });
 
-  it('安全懸念は逆変化・料金・満足より先に上書きする', () => {
-    const result = buildAssessmentResult(input({
-      safety: 'concern',
-      continuation: 'not-choose',
-      purpose: {
-        purpose: 'strength',
-        activity: 'strength-training',
-        performed: { kind: 'exact', count: 7 },
-        completed: { kind: 'exact', count: 2 },
-        contentFit: 'does-not-fit',
-        evidence: 'worse',
-      },
-      alternative: alternative({ kind: 'monthly', monthlyFeeYen: 3_000 }),
+  it('強い価値と追加価値が混在する規則6でも各価値の利用頻度を根拠へ使う', () => {
+    const values = [value(), value({ id: 'bath-sauna', frequency: 'once', payReason: 'no' })];
+    const once = buildAssessmentResult(input({ values }));
+    const often = buildAssessmentResult(input({
+      values: values.map((item) => item.id === 'bath-sauna' ? { ...item, frequency: 'often' } : item),
     }));
-    expect(result.recommendation).toMatchObject({ kind: 'safety-first', barrier: null });
+    expect(once.recommendation.decisionRuleId).toBe('rule-6');
+    expect(often.recommendation.decisionRuleId).toBe('rule-6');
+    expect(once.recommendation.reason).toContain('風呂・温泉・サウナ・休憩');
+    expect(once.recommendation.reason).not.toBe(often.recommendation.reason);
   });
 
-  it('価値がそろい同等な公式代替だけが安ければ料金比較へ変える', () => {
-    expect(buildAssessmentResult(input({
-      alternative: alternative({ kind: 'monthly', monthlyFeeYen: 6_000 }),
-    })).recommendation.kind).toBe('compare-lower-plan');
+  it.each([
+    { frequency: 'often' as const, text: '多くの来館または日常で役立ち、残したい価値と回答' },
+    { frequency: 'unknown' as const, text: '利用頻度を覚えていませんが、残したい価値と回答' },
+  ])('強い価値の頻度$frequencyを自然な根拠文にする', ({ frequency, text }) => {
+    const result = buildAssessmentResult(input({ values: [value({ frequency })] }));
+    expect(result.recommendation.reason).toContain(text);
   });
 
-  it('阻害要因は問題時だけ要求し、安全懸念時は聞かない', () => {
-    expect(requiresBarrier({
-      performed: { kind: 'exact', count: 7 },
-      completed: { kind: 'exact', count: 7 },
-      contentFit: 'fits',
-      evidence: 'improved',
-      continuation: 'choose',
-      safety: 'no-concern',
-    })).toBe(false);
-    expect(requiresBarrier({
-      performed: { kind: 'exact', count: 7 },
-      completed: { kind: 'exact', count: 5 },
-      contentFit: 'fits',
-      evidence: 'improved',
-      continuation: 'choose',
-      safety: 'no-concern',
-    })).toBe(true);
-    expect(requiresBarrier({
-      performed: { kind: 'exact', count: 0 },
-      completed: { kind: 'exact', count: 0 },
-      contentFit: 'does-not-fit',
-      evidence: 'worse',
-      continuation: 'not-choose',
-      safety: 'concern',
-    })).toBe(false);
-  });
-});
-
-describe('GFR-G1R4 全質問の使用規則', () => {
-  it('料金・来館・時間・目的・活動・S・Fが対応する計算または条件を変える', () => {
+  it('全価値質問の入力変更が価値根拠または次行動を変える', () => {
     const baseline = buildAssessmentResult(input());
-    const feeChanged = buildAssessmentResult(input({
-      fees: { monthlyFeeYen: 8_000, monthlyFixedFeeYen: 500, annualFeeYen: 1_200 },
+    const idChanged = buildAssessmentResult(input({ values: [value({ id: 'pool' })] }));
+    expect(idChanged.valueSummary.assessments[0]?.label).not.toBe(
+      baseline.valueSummary.assessments[0]?.label,
+    );
+
+    const frequencyChanged = buildAssessmentResult(input({
+      values: [value({ frequency: 'once' })],
     }));
-    expect(feeChanged.monthly.roundedYen).not.toBe(baseline.monthly.roundedYen);
+    expect(frequencyChanged.valueSummary.frequencyCounts).not.toEqual(
+      baseline.valueSummary.frequencyCounts,
+    );
+    expect(frequencyChanged.recommendation.nextStep).not.toBe(
+      baseline.recommendation.nextStep,
+    );
+
+    const fulfillmentChanged = buildAssessmentResult(input({
+      values: [value({ fulfillment: 'unmet' })],
+    }));
+    expect(fulfillmentChanged.recommendation.decisionRuleId).not.toBe(
+      baseline.recommendation.decisionRuleId,
+    );
+
+    const payChanged = buildAssessmentResult(input({
+      values: [value({ payReason: 'no' })], barrier: 'offering',
+    }));
+    expect(payChanged.recommendation.kind).not.toBe(baseline.recommendation.kind);
+
+    const customChanged = buildAssessmentResult(input({
+      values: [value({ id: 'other', customLabel: '子どもと過ごす時間' })],
+    }));
+    expect(customChanged.valueSummary.assessments[0]?.label).toBe('子どもと過ごす時間');
+    expect(customChanged.recommendation.reason).toContain('子どもと過ごす時間');
+  });
+
+  it('阻害要因ごとに次行動と変更条件が変わる', () => {
+    const values = [value({ payReason: 'no' })];
+    const price = buildAssessmentResult(input({ values, barrier: 'price' }));
+    const crowding = buildAssessmentResult(input({ values, barrier: 'crowding' }));
+    expect(price.recommendation.nextStep).not.toBe(crowding.recommendation.nextStep);
+    expect(price.recommendation.changeCondition).not.toBe(crowding.recommendation.changeCondition);
+  });
+
+  it('料金・来館・時間・費用負担・継続意向の各質問が表示結果を変える', () => {
+    const baseline = buildAssessmentResult(input());
+
+    const feeChanges = [
+      { monthlyFeeYen: 8_500, monthlyFixedFeeYen: 0, annualFeeYen: 0 },
+      { monthlyFeeYen: 8_000, monthlyFixedFeeYen: 500, annualFeeYen: 0 },
+      { monthlyFeeYen: 8_000, monthlyFixedFeeYen: 0, annualFeeYen: 1_200 },
+    ];
+    for (const fees of feeChanges) {
+      const feesChanged = buildAssessmentResult(input({ fees }));
+      expect(feesChanged.monthly.roundedYen).not.toBe(baseline.monthly.roundedYen);
+      expect(feesChanged.perVisit).not.toEqual(baseline.perVisit);
+    }
 
     const visitsChanged = buildAssessmentResult(input({
-      visits: { kind: 'exact', visits: 10 },
+      visits: { kind: 'bounded', bandId: 'monthly-3-4', min: 3, max: 4 },
     }));
     expect(visitsChanged.perVisit).not.toEqual(baseline.perVisit);
-    expect(visitsChanged.purpose.activityRate).not.toEqual(baseline.purpose.activityRate);
 
-    const timeAdded = buildAssessmentResult(input({
+    const timeChanged = buildAssessmentResult(input({
       time: { kind: 'total-hours', totalHours: 10 },
     }));
-    expect(timeAdded.perHour.kind).toBe('exact');
-    expect(baseline.perHour.kind).toBe('unknown');
+    expect(timeChanged.perHour).not.toEqual(baseline.perHour);
 
-    const purposeChanged = buildAssessmentResult(input({
-      purpose: { ...input().purpose, purpose: 'endurance', evidence: 'unchanged' },
-      barrier: 'none',
+    const burdenChanged = buildAssessmentResult(input({
+      feeBurden: 'slight-burden', barrier: 'price',
     }));
-    expect(purposeChanged.purpose.changeExamples).not.toBe(baseline.purpose.changeExamples);
-    expect(purposeChanged.recommendation.nextStep).toContain('時間・距離・速度');
-
-    const activityChanged = buildAssessmentResult(input({
-      purpose: { ...input().purpose, activity: 'pool' },
-    }));
-    expect(activityChanged.purpose.completionExample).not.toBe(baseline.purpose.completionExample);
-    expect(activityChanged.purpose.qualityQuestion).not.toBe(baseline.purpose.qualityQuestion);
-    expect(activityChanged.purpose.alternativeRequirement).not.toBe(
-      baseline.purpose.alternativeRequirement,
-    );
-
-    const performedChanged = buildAssessmentResult(input({
-      purpose: {
-        ...input().purpose,
-        performed: { kind: 'exact', count: 6 },
-        completed: { kind: 'exact', count: 6 },
-      },
-    }));
-    expect(performedChanged.purpose.yenPerPerformed).not.toBe(baseline.purpose.yenPerPerformed);
-    expect(performedChanged.purpose.activityRate).not.toEqual(baseline.purpose.activityRate);
-
-    const completedChanged = buildAssessmentResult(input({
-      purpose: { ...input().purpose, completed: { kind: 'exact', count: 5 } },
-      barrier: 'none',
-    }));
-    expect(completedChanged.purpose.yenPerCompleted).not.toBe(baseline.purpose.yenPerCompleted);
-    expect(completedChanged.recommendation.kind).toBe('review-training');
-  });
-
-  it('主目的と主活動だけの変更では料金数値を変えず、質問と行動だけを変える', () => {
-    const baseline = buildAssessmentResult(input({
-      purpose: { ...input().purpose, evidence: 'unchanged' },
-      barrier: 'none',
-    }));
-    const changed = buildAssessmentResult(input({
-      purpose: {
-        ...input().purpose,
-        purpose: 'endurance',
-        activity: 'cardio',
-        evidence: 'unchanged',
-      },
-      barrier: 'none',
-    }));
-
-    expect(changed.monthly).toEqual(baseline.monthly);
-    expect(changed.perVisit).toEqual(baseline.perVisit);
-    expect(changed.purpose.yenPerPerformed).toBe(baseline.purpose.yenPerPerformed);
-    expect(changed.purpose.yenPerCompleted).toBe(baseline.purpose.yenPerCompleted);
-    expect(changed.purpose.activityRate).toEqual(baseline.purpose.activityRate);
-    expect(changed.purpose.completionRate).toEqual(baseline.purpose.completionRate);
-    expect(changed.purpose.changeExamples).not.toBe(baseline.purpose.changeExamples);
-    expect(changed.purpose.qualityQuestion).not.toBe(baseline.purpose.qualityQuestion);
-    expect(changed.recommendation.nextStep).not.toBe(baseline.recommendation.nextStep);
-  });
-
-  it('実運動時間だけの変更では1時間単価だけを追加し、質・判定を変えない', () => {
-    const withoutTime = buildAssessmentResult(input());
-    const withTime = buildAssessmentResult(input({
-      time: { kind: 'total-hours', totalHours: 10 },
-    }));
-
-    expect(withoutTime.perHour).toEqual({ kind: 'unknown' });
-    expect(withTime.perHour).toEqual({ kind: 'exact', minutes: 600, yenPerHour: 800 });
-    expect(withTime.monthly).toEqual(withoutTime.monthly);
-    expect(withTime.perVisit).toEqual(withoutTime.perVisit);
-    expect(withTime.purpose).toEqual(withoutTime.purpose);
-    expect(withTime.price).toEqual(withoutTime.price);
-    expect(withTime.recommendation).toEqual(withoutTime.recommendation);
-  });
-
-  it('V範囲のC÷Vは両端だけをboundedで返し、中央値を作らない', () => {
-    expect(calculatePerVisitResult(
-      96_000,
-      { kind: 'bounded', bandId: 'weekly-1', min: 4, max: 6 },
-    )).toEqual({
-      kind: 'bounded',
-      bandId: 'weekly-1',
-      minVisits: 4,
-      maxVisits: 6,
-      minYenPerVisit: 1_333,
-      maxYenPerVisit: 2_000,
-    });
-  });
-
-  it('F=0<SでもC÷Fを除算せず、同じS回を完了したC÷Sを返す', () => {
-    const result = assessPurpose(
-      96_000,
-      { kind: 'exact', visits: 4 },
-      {
-        purpose: 'strength',
-        activity: 'strength-training',
-        performed: { kind: 'exact', count: 4 },
-        completed: { kind: 'exact', count: 0 },
-        contentFit: 'fits',
-        evidence: 'improved',
-      },
-    );
-    expect(result.yenPerCompleted).toBeNull();
-    expect(result.completedCostStatus).toBe('zero-count');
-    expect(result.completionRate).toEqual({
-      kind: 'exact',
-      numerator: 0,
-      denominator: 4,
-      percent: 0,
-    });
-    expect(result.completionOpportunity).toEqual({
-      kind: 'available',
-      performedCount: 4,
-      completedCount: 0,
-      incompleteCount: 4,
-      currentYenPerCompleted: null,
-      ifAllPerformedCompletedYen: 2_000,
-    });
-    expect(Number.isFinite(result.completionOpportunity.kind === 'available'
-      ? result.completionOpportunity.ifAllPerformedCompletedYen
-      : Number.NaN)).toBe(true);
-  });
-
-  it('質・変化・実利用・再選択・安全・阻害要因・公式代替が判断を変える', () => {
-    const fitChanged = buildAssessmentResult(input({
-      purpose: { ...input().purpose, contentFit: 'does-not-fit' },
-      barrier: 'equipment',
-    }));
-    expect(fitChanged.recommendation.kind).toBe('review-training');
-
-    const evidenceChanged = buildAssessmentResult(input({
-      purpose: { ...input().purpose, evidence: 'unknown' },
-      barrier: 'unknown',
-    }));
-    expect(evidenceChanged.recommendation.kind).toBe('confirm-materials');
-
-    const servicesChanged = buildAssessmentResult(input({
-      usedServices: ['pool', 'recovery'],
-    }));
-    expect(servicesChanged.price.requiredAlternativeServiceLabels).toEqual([
-      'プール',
-      '温浴・サウナ',
-    ]);
+    expect(burdenChanged.recommendation.kind).not.toBe(baseline.recommendation.kind);
 
     const continuationChanged = buildAssessmentResult(input({
-      continuation: 'not-choose',
-      barrier: 'travel',
+      continuation: 'not-choose', barrier: 'travel',
     }));
-    expect(continuationChanged.recommendation.kind).toBe('review-contract');
+    expect(continuationChanged.recommendation.kind).not.toBe(baseline.recommendation.kind);
+  });
 
-    const safetyChanged = buildAssessmentResult(input({ safety: 'concern' }));
-    expect(safetyChanged.recommendation.kind).toBe('safety-first');
+  it.each([
+    {
+      name: '利用なしを他条件より優先',
+      changes: { values: [], feeBurden: 'review-needed', continuation: 'not-choose', barrier: 'price' },
+      expected: 'confirm-use-condition',
+      rule: 'rule-1',
+    },
+    {
+      name: '強い価値と家計見直し',
+      changes: { feeBurden: 'review-needed', continuation: 'not-choose', barrier: 'price' },
+      expected: 'preserve-value-reduce-cost',
+      rule: 'rule-2',
+    },
+    {
+      name: '強い価値と非継続意向',
+      changes: { continuation: 'not-choose', barrier: 'travel' },
+      expected: 'review-contract',
+      rule: 'rule-3',
+    },
+    {
+      name: '強い価値だが期待未達',
+      changes: { values: [value({ fulfillment: 'unmet' })] },
+      expected: 'review-use',
+      rule: 'rule-4',
+    },
+    {
+      name: '強い価値と少し負担',
+      changes: { feeBurden: 'slight-burden', barrier: 'price' },
+      expected: 'keep-review-price',
+      rule: 'rule-5',
+    },
+    {
+      name: '強い価値と継続意向',
+      changes: {},
+      expected: 'keep-reason',
+      rule: 'rule-6',
+    },
+    {
+      name: '強い価値なしと負担',
+      changes: { values: [value({ payReason: 'no' })], feeBurden: 'slight-burden', barrier: 'price' },
+      expected: 'review-contract',
+      rule: 'rule-7',
+    },
+    {
+      name: '判断中の価値',
+      changes: { values: [value({ payReason: 'unsure' })], barrier: 'other' },
+      expected: 'review-use',
+      rule: 'rule-8',
+    },
+    {
+      name: '支払理由なし',
+      changes: { values: [value({ payReason: 'no' })], barrier: 'offering' },
+      expected: 'review-use',
+      rule: 'rule-9',
+    },
+  ] as const)('決定木: $name', ({ changes, expected, rule }) => {
+    const result = buildAssessmentResult(input(changes as Partial<ValidatedAssessmentInput>));
+    expect(result.recommendation.kind).toBe(expected);
+    expect(result.recommendation.decisionRuleId).toBe(rule);
+    expect(result.recommendation.decisionRuleLabel).not.toBe('');
+    expect(result.recommendation.reason).toContain('継続意向は「');
+    expect(result.recommendation.reason).toContain('会費負担は「');
+    expect(result.recommendation.reason).toContain('会費を払って残したい価値は');
+  });
 
-    const commonProblem = {
-      purpose: { ...input().purpose, completed: { kind: 'exact' as const, count: 5 } },
-    };
-    const schedule = buildAssessmentResult(input({ ...commonProblem, barrier: 'schedule' }));
-    const crowding = buildAssessmentResult(input({ ...commonProblem, barrier: 'crowding' }));
-    expect(schedule.recommendation.nextStep).not.toBe(crowding.recommendation.nextStep);
-
-    const alternativeChanged = buildAssessmentResult(input({
-      alternative: alternative({ kind: 'monthly', monthlyFeeYen: 6_000 }),
+  it('次行動は阻害要因、期待未達、期待不明、頻度不明、1回、回数不明、時間不明の順で選ぶ', () => {
+    const barrier = buildAssessmentResult(input({
+      values: [value({ fulfillment: 'unmet' })], feeBurden: 'slight-burden', barrier: 'price',
     }));
-    expect(alternativeChanged.price.status).toBe('alternative-lower');
-    expect(alternativeChanged.recommendation.kind).toBe('compare-lower-plan');
+    expect(barrier.recommendation.nextStep).toContain('低料金プラン');
+
+    const unmet = buildAssessmentResult(input({
+      values: [value({ fulfillment: 'unmet', frequency: 'unknown' })],
+    }));
+    expect(unmet.recommendation.nextStep).toContain('期待どおりになる条件');
+
+    const unknownFulfillment = buildAssessmentResult(input({
+      values: [value({ fulfillment: 'unknown', frequency: 'unknown' })],
+    }));
+    expect(unknownFulfillment.recommendation.nextStep).toContain('期待どおりだったか');
+
+    const unknownFrequency = buildAssessmentResult(input({
+      values: [value({ frequency: 'unknown' })], visits: { kind: 'unknown' },
+    }));
+    expect(unknownFrequency.recommendation.nextStep).toContain('使った日');
+
+    const once = buildAssessmentResult(input({
+      values: [value({ frequency: 'once' })], visits: { kind: 'unknown' },
+    }));
+    expect(once.recommendation.nextStep).toContain('同じ頻度でも');
+    expect(once.recommendation.nextStep).not.toContain('もう1回');
+
+    const visits = buildAssessmentResult(input({
+      visits: { kind: 'unknown' }, time: { kind: 'unknown' },
+    }));
+    expect(visits.recommendation.nextStep).toContain('来館日');
+
+    const facilityTime = buildAssessmentResult(input());
+    expect(facilityTime.recommendation.nextStep).toContain('館内利用時間');
   });
 });

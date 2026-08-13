@@ -2,127 +2,77 @@ import { createRef } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  buildAssessmentResult,
-  type ValidatedAssessmentInput,
-} from '../../domain/assessment';
+import { buildAssessmentResult, type ValidatedAssessmentInput } from '../../domain/assessment';
 import { ResultSummary } from './ResultSummary';
 
-function buildInput(overrides: Partial<ValidatedAssessmentInput> = {}): ValidatedAssessmentInput {
+function input(overrides: Partial<ValidatedAssessmentInput> = {}): ValidatedAssessmentInput {
   return {
     fees: { monthlyFeeYen: 8_000, monthlyFixedFeeYen: 300, annualFeeYen: 3_600 },
     visits: { kind: 'exact', visits: 6 },
     time: { kind: 'total-hours', totalHours: 9 },
-    purpose: {
-      purpose: 'strength',
-      activity: 'strength-training',
-      performed: { kind: 'exact', count: 6 },
-      completed: { kind: 'exact', count: 4 },
-      contentFit: 'fits',
-      evidence: 'improved',
-    },
-    usedServices: ['specialty-equipment', 'recovery'],
+    values: [
+      { id: 'training', customLabel: '', frequency: 'often', fulfillment: 'met', payReason: 'yes' },
+      { id: 'bath-sauna', customLabel: '', frequency: 'several', fulfillment: 'partly', payReason: 'unsure' },
+    ],
+    feeBurden: 'comfortable',
     continuation: 'choose',
-    safety: 'no-concern',
-    barrier: 'equipment',
-    alternative: {
-      availability: 'known',
-      name: '都度利用プラン',
-      pricing: { kind: 'per-visit', perVisitFeeYen: 1_800 },
-      monthlyFixedFeeYen: 0,
-      annualFeeYen: 0,
-      requiredServiceMonthlyYen: 0,
-      equivalence: { services: 'meets', hours: 'meets', location: 'meets' },
-    },
+    barrier: null,
     ...overrides,
   };
 }
 
-function renderResult(input: ValidatedAssessmentInput, onEdit = vi.fn()) {
-  render(
-    <ResultSummary
-      result={buildAssessmentResult(input)}
-      headingRef={createRef<HTMLHeadingElement>()}
-      onEdit={onEdit}
-    />,
-  );
-  return onEdit;
-}
-
-describe('GFR-G1R4 ResultSummary', () => {
-  it('冒頭で結論・一行動・変更条件を示し、V/S/Fと質を別々の根拠として表示する', async () => {
+describe('GFR-G1R5 ResultSummary', () => {
+  it('結論・理由・残したい価値・料金・次の行動・変更条件を順に表示する', async () => {
     const user = userEvent.setup();
-    const onEdit = renderResult(buildInput());
+    const onEdit = vi.fn();
+    render(<ResultSummary result={buildAssessmentResult(input())} headingRef={createRef<HTMLHeadingElement>()} onEdit={onEdit} />);
 
-    const overview = screen.getByRole('heading', { name: '目的活動は行えているが、内容を見直す' }).closest('.result-overview');
-    expect(overview).toHaveTextContent('目的活動 S：6回');
-    expect(overview).toHaveTextContent('内容完了 F：4回');
-    expect(overview).toHaveTextContent('次の一行動');
-    expect(overview).toHaveTextContent('結論が変わる条件：既に始めた目的活動S回で予定内容をすべて完了できた場合');
-    expect(overview).toHaveTextContent('主な阻害要因：必要な設備を使えなかった');
-
+    const overview = screen.getByRole('heading', { name: 'あなたには、この会費を払って続ける理由があります' }).closest('.result-overview');
+    expect(overview).toHaveTextContent('今回の結論');
+    expect(overview).toHaveTextContent('トレーニング設備');
+    expect(overview).toHaveTextContent('適用した規則：規則6');
+    expect(overview).not.toHaveTextContent('次の一行動');
+    expect(screen.getByRole('heading', { name: '会費を払って残したい価値' }).parentElement).toHaveTextContent('トレーニング設備');
+    expect(screen.getByRole('heading', { name: '次の利用で確かめたい価値' }).parentElement).toHaveTextContent('風呂・温泉・サウナ・休憩');
     expect(screen.getByRole('heading', { name: '実質月額 8,600円' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '来館1回あたり' }).parentElement).toHaveTextContent('1,433円／回');
-    expect(screen.getByRole('heading', { name: '目的活動1回あたり' }).parentElement).toHaveTextContent('1,433円／回');
-    expect(screen.getByRole('heading', { name: '内容完了1回あたり' }).parentElement).toHaveTextContent('2,150円／回');
-    expect(screen.getByRole('heading', { name: '実運動1時間あたり' }).parentElement).toHaveTextContent('956円／時間');
-    expect(screen.getByText('活動利用率 S÷V').parentElement).toHaveTextContent('100%');
-    expect(screen.getByText('内容完了率 F÷S').parentElement).toHaveTextContent('66.7%');
-    expect(screen.getByRole('heading', { name: '同じ活動回数で、始めた内容を完了できた場合' }).parentElement).toHaveTextContent('1,433円／完了');
-    expect(screen.getByText('専門設備')).toBeInTheDocument();
-    expect(screen.getByText('温浴・サウナ')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '同等比較で保持する活動・サービス' }).parentElement).toHaveTextContent('実利用の付帯サービス：専門設備・温浴・サウナ');
-    expect(screen.getByText(/一つの総合点へ足していません/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '来館1回あたり' }).parentElement).toHaveTextContent('1,433円');
+    expect(screen.getByRole('heading', { name: '来館1回あたり' }).parentElement).toHaveTextContent('8,600円 ÷ 6回');
+    expect(screen.getByRole('heading', { name: '館内利用1時間あたり' }).parentElement).toHaveTextContent('956円');
+    expect(screen.getByRole('heading', { name: '館内利用1時間あたり' }).parentElement).toHaveTextContent('8,600円 × 60 ÷ 540分');
+    const headings = screen.getAllByRole('heading').map((heading) => heading.textContent);
+    expect(headings.indexOf('会費を払って残したい価値')).toBeLessThan(headings.indexOf('実質月額 8,600円'));
+    expect(headings.indexOf('実質月額 8,600円')).toBeLessThan(headings.indexOf('次の一行動'));
+    expect(headings.indexOf('次の一行動')).toBeLessThan(headings.indexOf('結論が変わる条件'));
 
     await user.click(screen.getByRole('button', { name: '入力を修正' }));
     expect(onEdit).toHaveBeenCalledOnce();
   });
 
-  it('不明回答から数値を捏造せず、実運動時間を入力しなければ時間単価を出さない', () => {
-    renderResult(buildInput({
-      visits: { kind: 'unknown' },
-      time: { kind: 'unknown' },
-      purpose: {
-        purpose: 'health',
-        activity: 'cardio',
-        performed: { kind: 'unknown' },
-        completed: { kind: 'unknown' },
-        contentFit: 'unknown',
-        evidence: 'unknown',
-      },
-      usedServices: ['none'],
-      continuation: 'unknown',
-      safety: 'unknown',
-      barrier: 'unknown',
-      alternative: { availability: 'unknown' },
-    }));
+  it('その他の具体名と全3回答を透明に表示する', async () => {
+    render(<ResultSummary
+      result={buildAssessmentResult(input({
+        values: [{ id: 'other', customLabel: '仕事帰りの気分転換', frequency: 'once', fulfillment: 'unknown', payReason: 'yes' }],
+      }))}
+      headingRef={createRef<HTMLHeadingElement>()}
+      onEdit={vi.fn()}
+    />);
 
-    expect(screen.getByRole('heading', { name: '判断材料を一つ記録して再確認する' })).toBeInTheDocument();
-    expect(screen.getByText('活動利用率 S÷V').parentElement).toHaveTextContent('算出していません');
-    expect(screen.getByRole('heading', { name: '来館1回あたり' }).parentElement).toHaveTextContent('回数が不明');
-    expect(screen.queryByRole('heading', { name: '実運動1時間あたり' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '比較資料不足' }).closest('.comparison-result')).toHaveTextContent('料金の得・損は確定していません');
-    expect(document.body).not.toHaveTextContent(/平均回数|総合得点|退会すべき|滞在時間/);
+    await userEvent.setup().click(screen.getByText('すべての利用価値の回答を見る'));
+    const detail = screen.getByRole('heading', { name: '仕事帰りの気分転換' }).closest('article');
+    expect(detail).toHaveTextContent('1回程度');
+    expect(detail).toHaveTextContent('まだ判断できない');
+    expect(detail).toHaveTextContent('会費を払ってでも残したい');
   });
 
-  it('安全上の懸念がある場合は料金より安全確認を冒頭で優先する', () => {
-    renderResult(buildInput({
-      purpose: {
-        purpose: 'strength',
-        activity: 'strength-training',
-        performed: { kind: 'exact', count: 6 },
-        completed: { kind: 'exact', count: 4 },
-        contentFit: 'does-not-fit',
-        evidence: 'worse',
-      },
-      continuation: 'not-choose',
-      safety: 'concern',
-      barrier: null,
-    }));
+  it('0回来館と時間未入力の未算出理由を具体的に表示する', () => {
+    render(<ResultSummary
+      result={buildAssessmentResult(input({ visits: { kind: 'exact', visits: 0 }, time: { kind: 'unknown' } }))}
+      headingRef={createRef<HTMLHeadingElement>()}
+      onEdit={vi.fn()}
+    />);
 
-    const overview = screen.getByRole('heading', { name: '安全確認を優先する' }).closest('.result-overview');
-    expect(overview).toHaveTextContent('運動を中止し、再開・増量の前に医療機関等へ確認する');
-    expect(overview).toHaveTextContent('結論が変わる条件：安全上の懸念がないと確認でき、ほかの入力を再確認した場合');
-    expect(overview).not.toHaveTextContent('主な阻害要因');
+    expect(screen.getByRole('heading', { name: '来館1回あたり' }).parentElement).toHaveTextContent('来館回数が0回のため');
+    expect(screen.getByRole('heading', { name: '来館1回あたり' }).parentElement).toHaveTextContent('今月支払った実質月額は8,600円');
+    expect(screen.getByRole('heading', { name: '館内利用1時間あたり' }).parentElement).toHaveTextContent('館内利用時間を入力していないため');
   });
 });
