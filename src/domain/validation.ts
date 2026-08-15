@@ -1,23 +1,16 @@
 import {
-  barrierOptions,
-  continuationOptions,
   feeBurdenOptions,
-  payReasonOptions,
-  requiresBarrier,
-  valueFrequencyOptions,
-  valueFulfillmentOptions,
   valueOptions,
+  valueStatusOptions,
   visitBandOptions,
-  type BarrierId,
-  type ContinuationIntent,
   type FeeBurden,
-  type PayReason,
+  type FeeEntry,
   type TimeInput,
   type ValidatedAssessmentInput,
   type ValueAssessmentInput,
-  type ValueFrequency,
-  type ValueFulfillment,
   type ValueId,
+  type ValueRole,
+  type ValueStatus,
   type VisitBandId,
   type VisitKnowledge,
   type VisitMode,
@@ -25,20 +18,20 @@ import {
 
 export type ErrorMap = Record<string, string>;
 export type TimeMode = TimeInput['kind'] | '';
-export type AdditionalFeesMode = 'none' | 'known' | '';
+export type FeeMode = FeeEntry['kind'] | '';
 
 export interface RawValueEntry {
   id: ValueId;
   customLabel: string;
-  frequency: ValueFrequency | '';
-  fulfillment: ValueFulfillment | '';
-  payReason: PayReason | '';
+  role: ValueRole | '';
+  status: ValueStatus | '';
 }
 
 export interface RawAssessmentInput {
   monthlyFee: string;
-  additionalFeesMode: AdditionalFeesMode;
-  monthlyFixedFee: string;
+  monthlyAdditionalMode: FeeMode;
+  monthlyAdditionalFee: string;
+  annualFeeMode: FeeMode;
   annualFee: string;
   visitMode: VisitMode | '';
   visitBand: VisitBandId | '';
@@ -49,12 +42,10 @@ export interface RawAssessmentInput {
   values: RawValueEntry[];
   noValueUsed: boolean;
   feeBurden: FeeBurden | '';
-  continuation: ContinuationIntent | '';
-  barrier: BarrierId | '';
 }
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: ErrorMap };
-type ValueValidationResult = { ok: true; value: number } | { ok: false; error: string };
+type NumberValidationResult = { ok: true; value: number } | { ok: false; error: string };
 
 const fullWidthZeroCode = '０'.charCodeAt(0);
 const asciiZeroCode = '0'.charCodeAt(0);
@@ -62,8 +53,9 @@ const asciiZeroCode = '0'.charCodeAt(0);
 export function createEmptyRawAssessmentInput(): RawAssessmentInput {
   return {
     monthlyFee: '',
-    additionalFeesMode: '',
-    monthlyFixedFee: '',
+    monthlyAdditionalMode: '',
+    monthlyAdditionalFee: '',
+    annualFeeMode: '',
     annualFee: '',
     visitMode: '',
     visitBand: '',
@@ -74,23 +66,7 @@ export function createEmptyRawAssessmentInput(): RawAssessmentInput {
     values: [],
     noValueUsed: false,
     feeBurden: '',
-    continuation: '',
-    barrier: '',
   };
-}
-
-export function rawRequiresBarrier(raw: RawAssessmentInput): boolean {
-  const values = raw.values
-    .filter((value) => valueOptions.some((option) => option.id === value.id))
-    .map((value): ValueAssessmentInput => ({
-      id: value.id,
-      customLabel: value.id === 'other' ? value.customLabel.trim() : '',
-      frequency: value.frequency || 'unknown',
-      fulfillment: value.fulfillment || 'unknown',
-      payReason: value.payReason || 'unsure',
-    }));
-  if (!raw.feeBurden || !raw.continuation) return true;
-  return requiresBarrier({ values, feeBurden: raw.feeBurden, continuation: raw.continuation });
 }
 
 export function validateAssessmentInput(
@@ -113,42 +89,23 @@ export function validateAssessmentInput(
     errors[fieldId] = '来館0回の月に、正の館内利用時間は入力できません。';
   }
 
-  const values = validateValues(raw, errors);
+  // 来館0回では価値質問自体を行わない。画面切替前の値が残っていても採用しない。
+  const values = visits?.kind === 'exact' && visits.visits === 0
+    ? []
+    : validateValues(raw, errors);
   const validFeeBurdens = new Set(feeBurdenOptions.map((option) => option.id));
-  const validContinuations = new Set(continuationOptions.map((option) => option.id));
-  const validBarriers = new Set(barrierOptions.map((option) => option.id));
   const feeBurden = raw.feeBurden && validFeeBurdens.has(raw.feeBurden)
     ? raw.feeBurden
     : null;
-  const continuation = raw.continuation && validContinuations.has(raw.continuation)
-    ? raw.continuation
-    : null;
-
-  if (!feeBurden) errors['fee-burden'] = '現在の会費を無理なく払えるか選んでください。';
-  if (!continuation) errors.continuation = '同じ条件なら来月も選ぶか選んでください。';
-
-  let barrier: BarrierId | null = null;
-  if (values && feeBurden && continuation) {
-    const required = requiresBarrier({ values, feeBurden, continuation });
-    if (required) {
-      if (!raw.barrier || !validBarriers.has(raw.barrier)) {
-        errors.barrier = '継続を迷わせる主な要因を選んでください。';
-      } else {
-        barrier = raw.barrier;
-      }
-    }
-  }
+  if (!feeBurden) errors['fee-burden'] = '入力済みの会費を無理なく払えるか選んでください。';
 
   if (
     Object.keys(errors).length > 0
-    || !fees.monthlyFee.ok
-    || !fees.monthlyFixedFee.ok
-    || !fees.annualFee.ok
+    || !fees
     || !visits
     || !time
     || !values
     || !feeBurden
-    || !continuation
   ) {
     return { ok: false, errors };
   }
@@ -156,17 +113,11 @@ export function validateAssessmentInput(
   return {
     ok: true,
     value: {
-      fees: {
-        monthlyFeeYen: fees.monthlyFee.value,
-        monthlyFixedFeeYen: fees.monthlyFixedFee.value,
-        annualFeeYen: fees.annualFee.value,
-      },
+      fees,
       visits,
       time,
       values,
       feeBurden,
-      continuation,
-      barrier,
     },
   };
 }
@@ -186,7 +137,7 @@ function validateInteger(
   maximum: number,
   emptyMessage: string,
   invalidMessage: string,
-): ValueValidationResult {
+): NumberValidationResult {
   const normalized = normalizeDigits(rawValue);
   if (normalized === '') return { ok: false, error: emptyMessage };
   if (normalized.length > String(maximum).length || !/^\d+$/.test(normalized)) {
@@ -199,22 +150,13 @@ function validateInteger(
   return { ok: true, value };
 }
 
-function validateOptionalInteger(
-  rawValue: string,
-  maximum: number,
-  invalidMessage: string,
-): ValueValidationResult {
-  if (normalizeDigits(rawValue) === '') return { ok: true, value: 0 };
-  return validateInteger(rawValue, 0, maximum, '', invalidMessage);
-}
-
 function validateOneDecimal(
   rawValue: string,
   minimumTenths: number,
   maximumTenths: number,
   emptyMessage: string,
   invalidMessage: string,
-): ValueValidationResult {
+): NumberValidationResult {
   const normalized = normalizeDigits(rawValue);
   if (normalized === '') return { ok: false, error: emptyMessage };
   if (!/^\d+(?:\.\d)?$/.test(normalized)) return { ok: false, error: invalidMessage };
@@ -231,43 +173,60 @@ function validateOneDecimal(
   return { ok: true, value: tenths / 10 };
 }
 
+function validateFeeEntry(
+  mode: FeeMode,
+  rawValue: string,
+  field: 'monthly-additional' | 'annual-fee',
+  errors: ErrorMap,
+): FeeEntry | null {
+  const isMonthly = field === 'monthly-additional';
+  const modeField = isMonthly ? 'monthly-additional-mode' : 'annual-fee-mode';
+  if (mode !== 'none' && mode !== 'known' && mode !== 'unknown') {
+    errors[modeField] = isMonthly
+      ? '毎月の追加費用があるか選んでください。'
+      : '年会費等があるか選んでください。';
+    return null;
+  }
+  if (mode === 'none' || mode === 'unknown') return { kind: mode };
+
+  const result = validateInteger(
+    rawValue,
+    1,
+    isMonthly ? 50_000 : 200_000,
+    isMonthly ? '毎月の追加費用を入力してください。' : '年会費等を入力してください。',
+    isMonthly
+      ? '毎月の追加費用を1～50,000円の整数で入力してください。'
+      : '年会費等を1～200,000円の整数で入力してください。',
+  );
+  if (!result.ok) {
+    errors[field] = result.error;
+    return null;
+  }
+  return { kind: 'known', yen: result.value };
+}
+
 function validateFees(raw: RawAssessmentInput, errors: ErrorMap) {
-  const monthlyFee = validateInteger(
+  const base = validateInteger(
     raw.monthlyFee,
     0,
     100_000,
-    '月会費を入力してください。',
-    '月会費を0～100,000円の整数で入力してください。',
+    '基本の月会費を入力してください。',
+    '基本の月会費を0～100,000円の整数で入力してください。',
   );
-  if (raw.additionalFeesMode !== 'none' && raw.additionalFeesMode !== 'known') {
-    errors['additional-fees-mode'] = '月会費以外の継続必須費用があるか選んでください。';
-  }
-  const monthlyFixedFee = raw.additionalFeesMode === 'known'
-    ? validateOptionalInteger(
-        raw.monthlyFixedFee,
-        50_000,
-        '毎月必要な追加費用を0～50,000円の整数で入力してください。',
-      )
-    : { ok: true as const, value: 0 };
-  const annualFee = raw.additionalFeesMode === 'known'
-    ? validateOptionalInteger(
-        raw.annualFee,
-        200_000,
-        '年会費等を0～200,000円の整数で入力してください。',
-      )
-    : { ok: true as const, value: 0 };
-  if (!monthlyFee.ok) errors['monthly-fee'] = monthlyFee.error;
-  if (!monthlyFixedFee.ok) errors['monthly-fixed-fee'] = monthlyFixedFee.error;
-  if (!annualFee.ok) errors['annual-fee'] = annualFee.error;
-  if (
-    raw.additionalFeesMode === 'known'
-    && monthlyFixedFee.ok
-    && annualFee.ok
-    && monthlyFixedFee.value + annualFee.value === 0
-  ) {
-    errors['additional-fees-mode'] = '追加費用がある場合は、少なくとも1つに1円以上を入力してください。';
-  }
-  return { monthlyFee, monthlyFixedFee, annualFee };
+  if (!base.ok) errors['monthly-fee'] = base.error;
+  const monthlyAdditional = validateFeeEntry(
+    raw.monthlyAdditionalMode,
+    raw.monthlyAdditionalFee,
+    'monthly-additional',
+    errors,
+  );
+  const annualFee = validateFeeEntry(raw.annualFeeMode, raw.annualFee, 'annual-fee', errors);
+  if (!base.ok || !monthlyAdditional || !annualFee) return null;
+  return {
+    baseMonthlyFeeYen: base.value,
+    monthlyAdditional,
+    annualFee,
+  };
 }
 
 function validateVisits(raw: RawAssessmentInput, errors: ErrorMap): VisitKnowledge | null {
@@ -295,7 +254,7 @@ function validateVisits(raw: RawAssessmentInput, errors: ErrorMap): VisitKnowled
       errors['visit-band'] = 'だいたいの来館回数を選んでください。';
       return null;
     }
-    if (band.id === 'monthly-9-plus') {
+    if (band.id === 'monthly-21-plus') {
       return { kind: 'at-least', bandId: band.id, min: band.min };
     }
     return { kind: 'bounded', bandId: band.id, min: band.min, max: band.max };
@@ -342,64 +301,74 @@ function validateValues(
   errors: ErrorMap,
 ): ValueAssessmentInput[] | null {
   if (raw.noValueUsed && raw.values.length > 0) {
-    errors.values = '「今月は特に利用していない」と価値項目は同時に選べません。';
+    errors.values = '「会費を払う理由になる利用は特にない」と価値項目は同時に選べません。';
     return null;
   }
   if (raw.noValueUsed) return [];
   if (raw.values.length === 0) {
-    errors.values = '今月利用した価値を1つ以上選ぶか、「今月は特に利用していない」を選んでください。';
+    errors.values = '会費を払う主な理由を1つ選ぶか、「特にない」を選んでください。';
     return null;
+  }
+  if (raw.values.length > 3) {
+    errors.values = '主な理由1つと、追加の理由2つまで選べます。';
   }
 
   const validIds = new Set(valueOptions.map((option) => option.id));
-  const validFrequencies = new Set(valueFrequencyOptions.map((option) => option.id));
-  const validFulfillments = new Set(valueFulfillmentOptions.map((option) => option.id));
-  const validPayReasons = new Set(payReasonOptions.map((option) => option.id));
+  const validRoles = new Set<ValueRole>(['primary', 'secondary']);
+  const validStatuses = new Set(valueStatusOptions.map((option) => option.id));
   const ids = raw.values.map((value) => value.id);
   if (new Set(ids).size !== ids.length) {
     errors.values = '同じ価値項目を重複して選ぶことはできません。';
   }
 
+  const primaryCount = raw.values.filter((value) => value.role === 'primary').length;
+  const secondaryCount = raw.values.filter((value) => value.role === 'secondary').length;
+  if (primaryCount !== 1) {
+    errors['primary-value'] = '会費を払う主な理由を1つだけ選んでください。';
+  }
+  if (secondaryCount > 2) {
+    errors['secondary-values'] = '追加の理由は2つまで選べます。';
+  }
+
   const values: ValueAssessmentInput[] = [];
   raw.values.forEach((rawValue, index) => {
     if (!validIds.has(rawValue.id)) {
-      errors[`value-${index}`] = '利用した価値を選び直してください。';
+      errors[`value-${index}`] = '価値項目を選び直してください。';
       return;
     }
     const prefix = `value-${rawValue.id}`;
     const customLabel = rawValue.customLabel.trim();
     if (rawValue.id === 'other' && (customLabel.length < 1 || customLabel.length > 80)) {
-      errors[`${prefix}-custom-label`] = 'その他の価値を1～80文字で入力してください。';
+      errors[`${prefix}-custom-label`] = 'その他の内容を1～80文字で入力してください。';
     }
-    if (!rawValue.frequency || !validFrequencies.has(rawValue.frequency)) {
-      errors[`${prefix}-frequency`] = 'この価値をどの程度使ったか選んでください。';
+    if (!rawValue.role || !validRoles.has(rawValue.role)) {
+      errors[`${prefix}-role`] = '主な理由か追加の理由か選び直してください。';
     }
-    if (!rawValue.fulfillment || !validFulfillments.has(rawValue.fulfillment)) {
-      errors[`${prefix}-fulfillment`] = 'この価値が期待どおりだったか選んでください。';
-    }
-    if (!rawValue.payReason || !validPayReasons.has(rawValue.payReason)) {
-      errors[`${prefix}-pay-reason`] = 'この価値が会費を払って残したいものか選んでください。';
+    if (!rawValue.status || !validStatuses.has(rawValue.status)) {
+      errors[`${prefix}-status`] = 'この利用が期待どおりだったか選んでください。';
     }
     if (
-      rawValue.frequency
-      && validFrequencies.has(rawValue.frequency)
-      && rawValue.fulfillment
-      && validFulfillments.has(rawValue.fulfillment)
-      && rawValue.payReason
-      && validPayReasons.has(rawValue.payReason)
+      rawValue.role
+      && validRoles.has(rawValue.role)
+      && rawValue.status
+      && validStatuses.has(rawValue.status)
       && (rawValue.id !== 'other' || (customLabel.length >= 1 && customLabel.length <= 80))
     ) {
       values.push({
         id: rawValue.id,
         customLabel: rawValue.id === 'other' ? customLabel : '',
-        frequency: rawValue.frequency,
-        fulfillment: rawValue.fulfillment,
-        payReason: rawValue.payReason,
+        role: rawValue.role,
+        status: rawValue.status,
       });
     }
   });
 
-  return Object.keys(errors).some((key) => key === 'values' || key.startsWith('value-'))
+  return Object.keys(errors).some((key) => (
+    key === 'values'
+    || key === 'primary-value'
+    || key === 'secondary-values'
+    || key.startsWith('value-')
+  ))
     ? null
     : values;
 }
