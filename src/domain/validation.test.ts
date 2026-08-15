@@ -65,29 +65,23 @@ describe('R7 入力検証', () => {
     });
   });
 
-  it.each([
-    ['none', { kind: 'none' }],
-    ['unknown', { kind: 'unknown' }],
-  ] as const)('毎月追加費用の%sは隠れた金額を採用しない', (mode, expected) => {
+  it('毎月追加費用の「なし」は隠れた金額を採用しない', () => {
     const result = validateAssessmentInput(validRaw({
-      monthlyAdditionalMode: mode,
+      monthlyAdditionalMode: 'none',
       monthlyAdditionalFee: '不正な隠れ値',
     }));
-    expect(result.ok && result.value.fees.monthlyAdditional).toEqual(expected);
+    expect(result.ok && result.value.fees.monthlyAdditional).toEqual({ kind: 'none' });
   });
 
-  it.each([
-    ['none', { kind: 'none' }],
-    ['unknown', { kind: 'unknown' }],
-  ] as const)('年会費の%sは隠れた金額を採用しない', (mode, expected) => {
+  it('年会費の「なし」は隠れた金額を採用しない', () => {
     const result = validateAssessmentInput(validRaw({
-      annualFeeMode: mode,
+      annualFeeMode: 'none',
       annualFee: '不正な隠れ値',
     }));
-    expect(result.ok && result.value.fees.annualFee).toEqual(expected);
+    expect(result.ok && result.value.fees.annualFee).toEqual({ kind: 'none' });
   });
 
-  it('既知の追加費用は必須かつ1円以上とし、不明を0円と混同しない', () => {
+  it('「あり」の追加費用は必須かつ1円以上とする', () => {
     for (const changes of [
       { monthlyAdditionalMode: 'known' as const, monthlyAdditionalFee: '' },
       { monthlyAdditionalMode: 'known' as const, monthlyAdditionalFee: '0' },
@@ -100,14 +94,17 @@ describe('R7 入力検証', () => {
       expect(result.ok).toBe(false);
     }
 
-    const unknown = validateAssessmentInput(validRaw({
-      monthlyAdditionalMode: 'unknown',
-      annualFeeMode: 'unknown',
+  });
+
+  it('型を迂回した料金不明モードを「なし」とみなさず拒否する', () => {
+    const result = validateAssessmentInput(validRaw({
+      monthlyAdditionalMode: 'unknown' as never,
+      annualFeeMode: 'unknown' as never,
     }));
-    expect(unknown.ok).toBe(true);
-    if (unknown.ok) {
-      expect(unknown.value.fees.monthlyAdditional.kind).toBe('unknown');
-      expect(unknown.value.fees.annualFee.kind).toBe('unknown');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors['monthly-additional-mode']).toBeTruthy();
+      expect(result.errors['annual-fee-mode']).toBeTruthy();
     }
   });
 

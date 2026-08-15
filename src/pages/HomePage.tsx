@@ -22,7 +22,7 @@ export function HomePage() {
 
         <div className="home-intro__actions">
           <a className="button button--primary home-cta" href="/check">ジム会費を診断する</a>
-          <p>来館回数や追加料金が分からなくても、分かる範囲で診断できます。</p>
+          <p>請求明細や来館記録があると、料金と利用単価をより正確に確認できます。来館回数はおおよその範囲でも入力できます。</p>
         </div>
       </section>
 
@@ -39,10 +39,10 @@ export function HomePage() {
 
         <section className="home-panel" aria-labelledby="prepare-heading">
           <p className="eyebrow">入力する内容</p>
-          <h2 id="prepare-heading">細かな記録がなくても始められます</h2>
+          <h2 id="prepare-heading">料金明細と来館記録を確認してから始めると、より正確です</h2>
           <ul className="plain-list">
-            <li><strong>料金</strong><span>基本月会費のほか、毎月の必須オプションや年会費が分かれば用意します。</span></li>
-            <li><strong>最近の利用</strong><span>来館は正確な回数、だいたいの範囲、分からない、から選べます。</span></li>
+            <li><strong>料金</strong><span>基本月会費、毎月の必須オプション、年会費・更新料を請求明細や契約内容で確認します。</span></li>
+            <li><strong>最近の利用</strong><span>来館履歴があれば正確な回数を、なければ思い出せる範囲を入力します。</span></li>
             <li><strong>大きかった価値</strong><span>会費を払う理由として重要だった利用と、期待どおり使えたかを振り返ります。</span></li>
           </ul>
           <p className="home-panel__aside">入力はこのブラウザ内だけで計算し、保存・送信しません。契約変更を自動で決めるものではありません。</p>

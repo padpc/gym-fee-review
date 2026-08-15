@@ -6,8 +6,8 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 async function chooseNoExtraFees(page: Page) {
-  await page.getByRole('group', { name: '毎月必須の追加費用' }).getByRole('radio', { name: 'ない', exact: true }).check();
-  await page.getByRole('group', { name: '年会費・更新料など' }).getByRole('radio', { name: 'ない', exact: true }).check();
+  await page.getByRole('group', { name: '毎月必須の追加費用' }).getByRole('radio', { name: 'なし', exact: true }).check();
+  await page.getByRole('group', { name: '年会費・更新料など' }).getByRole('radio', { name: 'なし', exact: true }).check();
 }
 
 async function fillBase(page: Page, options: { visits?: string; unknownVisits?: boolean } = {}) {
@@ -46,6 +46,8 @@ test('ホーム、診断、方法、404の導線に通常の概要を表示す�
   await page.goto('/');
   await expect(page.getByRole('heading', { name: '今の会費に、払い続ける理由があるか整理' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '料金・利用・期待・負担を、一つの結論へまとめます' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '料金明細と来館記録を確認してから始めると、より正確です' })).toBeVisible();
+  await expect(page.getByText('細かな記録がなくても始められます')).toHaveCount(0);
   await expect(page.getByText('4問')).toHaveCount(0);
   await expect(page.getByText('最近1か月の4つだけ')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'よくある質問' })).toHaveCount(0);
@@ -74,10 +76,10 @@ test('料金総額、複数の重要な利用、温浴、質の未達、館内�
   await page.goto('/check');
   await page.getByRole('textbox', { name: /^基本月会費/ }).fill('8000');
   const monthly = page.getByRole('group', { name: '毎月必須の追加費用' });
-  await monthly.getByRole('radio', { name: 'あり、金額が分かる' }).check();
+  await monthly.getByRole('radio', { name: 'あり', exact: true }).check();
   await page.getByRole('textbox', { name: /^毎月必須の追加費用/ }).fill('300');
   const annual = page.getByRole('group', { name: '年会費・更新料など' });
-  await annual.getByRole('radio', { name: 'あり、金額が分かる' }).check();
+  await annual.getByRole('radio', { name: 'あり', exact: true }).check();
   await page.getByRole('textbox', { name: /^年会費・更新料など/ }).fill('3600');
   await page.getByRole('radio', { name: '回数が分かる' }).check();
   await page.getByRole('textbox', { name: /^来館回数/ }).fill('4');
@@ -108,6 +110,42 @@ test('料金総額、複数の重要な利用、温浴、質の未達、館内�
   await expectNoHorizontalOverflow(page);
 });
 
+test('最重要項目を選び直しても補助を自動選択せず、明示選択数だけで上限を制御する', async ({ page }) => {
+  await page.goto('/check');
+  const primary = page.getByRole('group', { name: '最も重要だったものを1つ選んでください' });
+
+  await primary.getByRole('radio', { name: 'トレーニング設備・フリーウェイト' }).check();
+  await page.keyboard.press('ArrowRight');
+  await expect(primary.getByRole('radio', { name: 'スタジオ・プログラム' })).toBeChecked();
+  await expect(page.getByText('追加で選択中：0／2件')).toBeVisible();
+  for (let index = 0; index < await page.getByRole('checkbox').count(); index += 1) {
+    await expect(page.getByRole('checkbox').nth(index)).not.toBeChecked();
+    await expect(page.getByRole('checkbox').nth(index)).toBeEnabled();
+  }
+
+  await page.keyboard.press('ArrowRight');
+  await expect(primary.getByRole('radio', { name: 'プール・水中運動' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'トレーニング設備・フリーウェイト' })).not.toBeChecked();
+  for (let index = 0; index < await page.getByRole('checkbox').count(); index += 1) {
+    await expect(page.getByRole('checkbox').nth(index)).not.toBeChecked();
+    await expect(page.getByRole('checkbox').nth(index)).toBeEnabled();
+  }
+
+  await page.getByRole('checkbox', { name: '風呂・温泉・サウナ・休憩' }).check();
+  await page.getByRole('checkbox', { name: '指導・フォーム確認' }).check();
+  await expect(page.getByText('追加で選択中：2／2件')).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: '友人・コミュニティ' })).toBeDisabled();
+
+  await primary.getByRole('radio', { name: '風呂・温泉・サウナ・休憩' }).check();
+  await expect(page.getByText('追加で選択中：1／2件')).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: '指導・フォーム確認' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'トレーニング設備・フリーウェイト' })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'プール・水中運動' })).not.toBeChecked();
+  for (let index = 0; index < await page.getByRole('checkbox').count(); index += 1) {
+    await expect(page.getByRole('checkbox').nth(index)).toBeEnabled();
+  }
+});
+
 test('範囲来館と主価値の一部充足から、あと1か月の確認を提案する', async ({ page }) => {
   await page.goto('/check');
   await page.getByRole('textbox', { name: /^基本月会費/ }).fill('8000');
@@ -128,22 +166,34 @@ test('範囲来館と主価値の一部充足から、あと1か月の確認を�
   await expectNoHorizontalOverflow(page);
 });
 
-test('不明な追加料金を0円扱いせず、回数不明では参考額を示す', async ({ page }) => {
+test('追加料金の有無と金額が揃ってから実質月額を示し、回数不明では参考額を示す', async ({ page }) => {
   await page.goto('/check');
   await page.getByRole('textbox', { name: /^基本月会費/ }).fill('8000');
-  await page.getByRole('group', { name: '毎月必須の追加費用' }).getByRole('radio', { name: 'あるか金額が分からない' }).check();
-  await page.getByRole('group', { name: '年会費・更新料など' }).getByRole('radio', { name: 'ない', exact: true }).check();
+  const monthly = page.getByRole('group', { name: '毎月必須の追加費用' });
+  const annual = page.getByRole('group', { name: '年会費・更新料など' });
+  await expect(monthly.getByRole('radio')).toHaveCount(2);
+  await expect(annual.getByRole('radio')).toHaveCount(2);
+  await monthly.getByRole('radio', { name: 'あり', exact: true }).check();
+  await annual.getByRole('radio', { name: 'あり', exact: true }).check();
+  await expect(page.getByText('実質月額はまだ計算できません').locator('..')).toContainText('毎月必須の追加費用の金額');
+  await expect(page.getByText('実質月額はまだ計算できません').locator('..')).toContainText('年会費・更新料などの金額');
+  await expect(page.getByText('計算済みの実質月額')).toHaveCount(0);
+  await page.getByRole('textbox', { name: /^毎月必須の追加費用/ }).fill('300');
+  const annualInput = page.getByRole('textbox', { name: /^年会費・更新料など/ });
+  await page.getByRole('button', { name: '診断結果を見る' }).click();
+  await expect(page.getByRole('alert')).toContainText('年会費等を入力してください');
+  await expect(annualInput).toBeFocused();
+  await annualInput.fill('1200');
+  await expect(page.getByText('計算済みの実質月額').locator('..')).toContainText('8,400円');
   await page.getByRole('group', { name: '最近の1か月の来館回数' }).getByRole('radio', { name: '分からない' }).check();
   await page.getByRole('radio', { name: '1回の平均時間' }).check();
   await page.getByRole('textbox', { name: /^1回の平均館内利用時間/ }).fill('90');
   await selectPrimary(page, '立地・営業時間・通いやすさ');
-  await expect(page.getByText('入力済み分の月額').locator('..')).toContainText('毎月の追加費用は未確認');
   await page.getByRole('radio', { name: '無理なく払える' }).check();
   await page.getByRole('button', { name: '診断結果を見る' }).click();
 
-  await expect(page.getByRole('heading', { name: '価値はあります。料金条件を見直しましょう' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '入力済み分の月額 8,000円' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '見直す根拠' }).locator('..')).toContainText('毎月の追加費用が不明');
+  await expect(page.getByRole('heading', { name: '今の会費を続ける根拠があります' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '実質月額 8,400円' })).toBeVisible();
   const perVisit = page.getByRole('heading', { name: '来館1回あたり' }).locator('..');
   for (const count of [1, 2, 4, 8, 12]) await expect(perVisit).toContainText(`月${count}回なら`);
   const perHour = page.getByRole('heading', { name: '館内利用1時間あたり' }).locator('..');

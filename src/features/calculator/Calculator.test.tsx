@@ -8,8 +8,8 @@ type User = ReturnType<typeof userEvent.setup>;
 
 async function fillBase(user: User, visits: 'exact' | 'unknown' = 'exact') {
   await user.type(screen.getByRole('textbox', { name: /^基本月会費/ }), '8000');
-  await user.click(within(screen.getByRole('group', { name: '毎月必須の追加費用' })).getByRole('radio', { name: 'ない' }));
-  await user.click(within(screen.getByRole('group', { name: '年会費・更新料など' })).getByRole('radio', { name: 'ない' }));
+  await user.click(within(screen.getByRole('group', { name: '毎月必須の追加費用' })).getByRole('radio', { name: 'なし' }));
+  await user.click(within(screen.getByRole('group', { name: '年会費・更新料など' })).getByRole('radio', { name: 'なし' }));
   const visitGroup = screen.getByRole('group', { name: '最近の1か月の来館回数' });
   await user.click(within(visitGroup).getByRole('radio', { name: visits === 'exact' ? '回数が分かる' : '分からない' }));
   if (visits === 'exact') await user.type(screen.getByRole('textbox', { name: /^来館回数/ }), '4');
@@ -33,10 +33,10 @@ describe('GFR-G1R7 Calculator', () => {
 
     await user.type(screen.getByRole('textbox', { name: /^基本月会費/ }), '8000');
     const monthly = screen.getByRole('group', { name: '毎月必須の追加費用' });
-    await user.click(within(monthly).getByRole('radio', { name: 'あり、金額が分かる' }));
+    await user.click(within(monthly).getByRole('radio', { name: 'あり' }));
     await user.type(screen.getByRole('textbox', { name: /^毎月必須の追加費用/ }), '300');
     const annual = screen.getByRole('group', { name: '年会費・更新料など' });
-    await user.click(within(annual).getByRole('radio', { name: 'あり、金額が分かる' }));
+    await user.click(within(annual).getByRole('radio', { name: 'あり' }));
     await user.type(screen.getByRole('textbox', { name: /^年会費・更新料など/ }), '3600');
     await user.click(screen.getByRole('radio', { name: '回数が分かる' }));
     await user.type(screen.getByRole('textbox', { name: /^来館回数/ }), '4');
@@ -69,6 +69,44 @@ describe('GFR-G1R7 Calculator', () => {
     expect(document.body).not.toHaveTextContent('来月また選ぶ');
   });
 
+  it('最重要項目を選び直しても補助を自動選択せず、明示選択数だけで上限を制御する', async () => {
+    const user = userEvent.setup();
+    render(<Calculator />);
+    const primaryGroup = screen.getByRole('group', { name: '最も重要だったものを1つ選んでください' });
+
+    await user.click(within(primaryGroup).getByRole('radio', { name: 'トレーニング設備・フリーウェイト' }));
+    await user.keyboard('{ArrowRight}');
+
+    expect(within(primaryGroup).getByRole('radio', { name: 'スタジオ・プログラム' })).toBeChecked();
+    expect(screen.getByText('追加で選択中：0／2件')).toBeInTheDocument();
+    for (const checkbox of screen.getAllByRole('checkbox')) {
+      expect(checkbox).not.toBeChecked();
+      expect(checkbox).not.toBeDisabled();
+    }
+
+    await user.keyboard('{ArrowRight}');
+
+    expect(within(primaryGroup).getByRole('radio', { name: 'プール・水中運動' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'トレーニング設備・フリーウェイト' })).not.toBeChecked();
+    for (const checkbox of screen.getAllByRole('checkbox')) {
+      expect(checkbox).not.toBeChecked();
+      expect(checkbox).not.toBeDisabled();
+    }
+
+    await user.click(screen.getByRole('checkbox', { name: '風呂・温泉・サウナ・休憩' }));
+    await user.click(screen.getByRole('checkbox', { name: '指導・フォーム確認' }));
+    expect(screen.getByText('追加で選択中：2／2件')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '友人・コミュニティ' })).toBeDisabled();
+
+    await user.click(within(primaryGroup).getByRole('radio', { name: '風呂・温泉・サウナ・休憩' }));
+
+    expect(screen.getByText('追加で選択中：1／2件')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: '指導・フォーム確認' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'トレーニング設備・フリーウェイト' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'プール・水中運動' })).not.toBeChecked();
+    for (const checkbox of screen.getAllByRole('checkbox')) expect(checkbox).not.toBeDisabled();
+  });
+
   it('その他の具体名と期待が未回答なら最初の該当入力へフォーカスする', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
@@ -96,24 +134,28 @@ describe('GFR-G1R7 Calculator', () => {
     await waitFor(() => expect(group).toHaveFocus());
   });
 
-  it('追加料金が不明でも入力済み月額を示し、不明箇所を結果へ残す', async () => {
+  it('料金区分と「あり」の金額が揃うまで実質月額を表示しない', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
 
     await user.type(screen.getByRole('textbox', { name: /^基本月会費/ }), '8000');
-    await user.click(within(screen.getByRole('group', { name: '毎月必須の追加費用' })).getByRole('radio', { name: 'あるか金額が分からない' }));
-    await user.click(within(screen.getByRole('group', { name: '年会費・更新料など' })).getByRole('radio', { name: 'ない' }));
-    await user.click(screen.getByRole('radio', { name: '回数が分かる' }));
-    await user.type(screen.getByRole('textbox', { name: /^来館回数/ }), '4');
-    await selectPrimary(user, 'トレーニング設備・フリーウェイト');
-    await answerBurden(user);
+    expect(screen.getByText('実質月額はまだ計算できません').parentElement).toHaveTextContent('毎月必須の追加費用の有無');
+    expect(screen.queryByText('計算済みの実質月額')).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '実際に支払う会費は、生活費に対して無理なく払えますか' })).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('上の月額は');
 
-    const preview = screen.getByText('入力済み分の月額').parentElement;
-    expect(preview).toHaveTextContent('8,000円');
-    expect(preview).toHaveTextContent('毎月の追加費用は未確認');
-    await user.click(screen.getByRole('button', { name: '診断結果を見る' }));
-    expect(await screen.findByRole('heading', { name: '入力済み分の月額 8,000円' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '見直す根拠' }).parentElement).toHaveTextContent('毎月の追加費用が不明');
+    await user.click(within(screen.getByRole('group', { name: '毎月必須の追加費用' })).getByRole('radio', { name: 'あり' }));
+    await user.click(within(screen.getByRole('group', { name: '年会費・更新料など' })).getByRole('radio', { name: 'あり' }));
+    expect(screen.getByText('実質月額はまだ計算できません').parentElement).toHaveTextContent('毎月必須の追加費用の金額');
+    expect(screen.getByText('実質月額はまだ計算できません').parentElement).toHaveTextContent('年会費・更新料などの金額');
+
+    await user.type(screen.getByRole('textbox', { name: /^毎月必須の追加費用/ }), '300');
+    await user.type(screen.getByRole('textbox', { name: /^年会費・更新料など/ }), '1200');
+    expect(screen.getByText('計算済みの実質月額').parentElement).toHaveTextContent('8,400円');
+
+    await user.clear(screen.getByRole('textbox', { name: /^年会費・更新料など/ }));
+    expect(screen.getByText('実質月額はまだ計算できません').parentElement).toHaveTextContent('年会費・更新料などの金額');
+    expect(screen.queryByText('計算済みの実質月額')).not.toBeInTheDocument();
   });
 
   it('回数不明でも結論と回数別参考額を表示する', async () => {

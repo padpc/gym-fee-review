@@ -190,10 +190,9 @@ function FeesFields({ raw, errors, update }: {
       <fieldset id="monthly-additional-mode" tabIndex={-1} className={`option-section option-section--spaced ${errors['monthly-additional-mode'] ? 'option-section--error' : ''}`} aria-invalid={Boolean(errors['monthly-additional-mode'])} aria-describedby={errors['monthly-additional-mode'] ? 'monthly-additional-mode-error' : undefined}>
         <legend>毎月必須の追加費用</legend>
         <p className="field__hint">契約上必ず払うロッカー代や必須オプションなど。都度払いは含めません。</p>
-        <div className="choice-grid choice-grid--three">
-          <ChoiceOption id="monthly-additional-none" name="monthly-additional-mode" value="none" checked={raw.monthlyAdditionalMode === 'none'} label="ない" errorId={errors['monthly-additional-mode'] ? 'monthly-additional-mode-error' : undefined} onChange={() => changeMonthlyMode('none')} />
-          <ChoiceOption id="monthly-additional-known" name="monthly-additional-mode" value="known" checked={raw.monthlyAdditionalMode === 'known'} label="あり、金額が分かる" errorId={errors['monthly-additional-mode'] ? 'monthly-additional-mode-error' : undefined} onChange={() => changeMonthlyMode('known')} />
-          <ChoiceOption id="monthly-additional-unknown" name="monthly-additional-mode" value="unknown" checked={raw.monthlyAdditionalMode === 'unknown'} label="あるか金額が分からない" errorId={errors['monthly-additional-mode'] ? 'monthly-additional-mode-error' : undefined} onChange={() => changeMonthlyMode('unknown')} />
+        <div className="choice-grid choice-grid--two">
+          <ChoiceOption id="monthly-additional-none" name="monthly-additional-mode" value="none" checked={raw.monthlyAdditionalMode === 'none'} label="なし" errorId={errors['monthly-additional-mode'] ? 'monthly-additional-mode-error' : undefined} onChange={() => changeMonthlyMode('none')} />
+          <ChoiceOption id="monthly-additional-known" name="monthly-additional-mode" value="known" checked={raw.monthlyAdditionalMode === 'known'} label="あり" errorId={errors['monthly-additional-mode'] ? 'monthly-additional-mode-error' : undefined} onChange={() => changeMonthlyMode('known')} />
         </div>
         {errors['monthly-additional-mode'] ? <p className="field__error" id="monthly-additional-mode-error">{errors['monthly-additional-mode']}</p> : null}
         {raw.monthlyAdditionalMode === 'known' ? (
@@ -204,10 +203,9 @@ function FeesFields({ raw, errors, update }: {
       <fieldset id="annual-fee-mode" tabIndex={-1} className={`option-section option-section--spaced ${errors['annual-fee-mode'] ? 'option-section--error' : ''}`} aria-invalid={Boolean(errors['annual-fee-mode'])} aria-describedby={errors['annual-fee-mode'] ? 'annual-fee-mode-error' : undefined}>
         <legend>年会費・更新料など</legend>
         <p className="field__hint">年に一度など、月会費とは別に繰り返し払う費用です。入会金など一度だけの費用は含めません。</p>
-        <div className="choice-grid choice-grid--three">
-          <ChoiceOption id="annual-fee-none" name="annual-fee-mode" value="none" checked={raw.annualFeeMode === 'none'} label="ない" errorId={errors['annual-fee-mode'] ? 'annual-fee-mode-error' : undefined} onChange={() => changeAnnualMode('none')} />
-          <ChoiceOption id="annual-fee-known" name="annual-fee-mode" value="known" checked={raw.annualFeeMode === 'known'} label="あり、金額が分かる" errorId={errors['annual-fee-mode'] ? 'annual-fee-mode-error' : undefined} onChange={() => changeAnnualMode('known')} />
-          <ChoiceOption id="annual-fee-unknown" name="annual-fee-mode" value="unknown" checked={raw.annualFeeMode === 'unknown'} label="あるか金額が分からない" errorId={errors['annual-fee-mode'] ? 'annual-fee-mode-error' : undefined} onChange={() => changeAnnualMode('unknown')} />
+        <div className="choice-grid choice-grid--two">
+          <ChoiceOption id="annual-fee-none" name="annual-fee-mode" value="none" checked={raw.annualFeeMode === 'none'} label="なし" errorId={errors['annual-fee-mode'] ? 'annual-fee-mode-error' : undefined} onChange={() => changeAnnualMode('none')} />
+          <ChoiceOption id="annual-fee-known" name="annual-fee-mode" value="known" checked={raw.annualFeeMode === 'known'} label="あり" errorId={errors['annual-fee-mode'] ? 'annual-fee-mode-error' : undefined} onChange={() => changeAnnualMode('known')} />
         </div>
         {errors['annual-fee-mode'] ? <p className="field__error" id="annual-fee-mode-error">{errors['annual-fee-mode']}</p> : null}
         {raw.annualFeeMode === 'known' ? (
@@ -319,8 +317,6 @@ function ValuesFields({ raw, errors, update }: {
     }
     const selected = raw.values.find((value) => value.id === id) ?? { id, customLabel: '', role: '', status: '' };
     const nextSecondary = raw.values.filter((value) => value.id !== id && value.role === 'secondary');
-    const previousPrimary = raw.values.find((value) => value.role === 'primary' && value.id !== id);
-    if (previousPrimary && nextSecondary.length < 2) nextSecondary.unshift({ ...previousPrimary, role: 'secondary' });
     update('values', [{ ...selected, role: 'primary' }, ...nextSecondary.slice(0, 2)]);
     update('noValueUsed', false);
   }
@@ -375,31 +371,43 @@ function ValuesFields({ raw, errors, update }: {
   );
 }
 
-function parseYen(value: string): number | null {
+function parseYen(value: string, minimum: number, maximum: number): number | null {
   const normalized = normalizeDigits(value);
   if (!/^\d+$/.test(normalized)) return null;
   const parsed = Number(normalized);
-  return Number.isSafeInteger(parsed) ? parsed : null;
+  return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null;
 }
 
 function FeePreview({ raw }: { raw: RawAssessmentInput }) {
-  const base = parseYen(raw.monthlyFee);
+  const base = parseYen(raw.monthlyFee, 0, 100_000);
   if (base === null) return <p className="fee-preview fee-preview--empty">基本月会費を入力すると、ここに判断対象の月額を表示します。</p>;
-  const monthlyAdditional = raw.monthlyAdditionalMode === 'known' ? parseYen(raw.monthlyAdditionalFee) : 0;
-  const annual = raw.annualFeeMode === 'known' ? parseYen(raw.annualFee) : 0;
-  const canCalculateKnown = monthlyAdditional !== null && annual !== null;
-  const subtotal = canCalculateKnown ? Math.round(base + monthlyAdditional + annual / 12) : base;
-  const unknownLabels = [
-    raw.monthlyAdditionalMode === 'unknown' ? '毎月の追加費用' : '',
-    raw.annualFeeMode === 'unknown' ? '年会費等' : '',
+  const monthlyAdditional = raw.monthlyAdditionalMode === 'known'
+    ? parseYen(raw.monthlyAdditionalFee, 1, 50_000)
+    : raw.monthlyAdditionalMode === 'none' ? 0 : null;
+  const annual = raw.annualFeeMode === 'known'
+    ? parseYen(raw.annualFee, 1, 200_000)
+    : raw.annualFeeMode === 'none' ? 0 : null;
+  const missingInputs = [
+    !raw.monthlyAdditionalMode
+      ? '毎月必須の追加費用の有無'
+      : monthlyAdditional === null ? '毎月必須の追加費用の金額' : '',
+    !raw.annualFeeMode
+      ? '年会費・更新料などの有無'
+      : annual === null ? '年会費・更新料などの金額' : '',
   ].filter(Boolean);
-  const incomplete = unknownLabels.length > 0 || !raw.monthlyAdditionalMode || !raw.annualFeeMode || !canCalculateKnown;
+  if (monthlyAdditional === null || annual === null) {
+    return (
+      <div className="fee-preview fee-preview--empty" aria-live="polite">
+        <p>実質月額はまだ計算できません</p>
+        <span>次を入力してください：{missingInputs.join('、')}</span>
+      </div>
+    );
+  }
+  const subtotal = Math.round(base + monthlyAdditional + annual / 12);
   return (
     <div className="fee-preview" aria-live="polite">
-      <p>{incomplete ? '入力済み分の月額' : '計算済みの実質月額'}</p>
+      <p>計算済みの実質月額</p>
       <strong>{formatYen(subtotal)}</strong>
-      {unknownLabels.length > 0 ? <span>{unknownLabels.join('と')}は未確認のため、この金額には含まれていません。</span> : null}
-      {!raw.monthlyAdditionalMode || !raw.annualFeeMode ? <span>追加費用と年会費の有無を選ぶと金額が確定します。</span> : null}
     </div>
   );
 }
@@ -414,7 +422,7 @@ function DecisionFields({ raw, errors, update }: {
       <div className="form-section__heading"><span className="step-number">4</span><h3 id="decision-heading-form">会費の負担</h3></div>
       <FeePreview raw={raw} />
       <fieldset id="fee-burden" tabIndex={-1} className={`option-section option-section--spaced ${errors['fee-burden'] ? 'option-section--error' : ''}`} aria-invalid={Boolean(errors['fee-burden'])} aria-describedby={errors['fee-burden'] ? 'fee-burden-error' : undefined}>
-        <legend>上の月額は、生活費に対して無理なく払えますか</legend>
+        <legend>実際に支払う会費は、生活費に対して無理なく払えますか</legend>
         <div className="choice-grid choice-grid--three">
           {feeBurdenOptions.map((option, index) => <ChoiceOption key={option.id} id={`fee-burden-choice-${index}`} name="fee-burden" value={option.id} checked={raw.feeBurden === option.id} label={option.label} errorId={errors['fee-burden'] ? 'fee-burden-error' : undefined} onChange={() => update('feeBurden', option.id as FeeBurden)} />)}
         </div>

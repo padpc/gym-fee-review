@@ -19,7 +19,9 @@ describe('GFR-G1R7 画面構成', () => {
     expect(screen.getByRole('heading', { level: 1, name: '今の会費に、払い続ける理由があるか整理' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'この診断で見ること' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '料金・利用・期待・負担を、一つの結論へまとめます' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '料金明細と来館記録を確認してから始めると、より正確です' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'ジム会費を診断する' })).toHaveAttribute('href', '/check');
+    expect(document.body).not.toHaveTextContent('細かな記録がなくても始められます');
     expect(document.body).not.toHaveTextContent('4問');
     expect(document.body).not.toHaveTextContent('最近1か月の4つだけ');
     expect(screen.queryByRole('heading', { name: 'よくある質問' })).not.toBeInTheDocument();
@@ -41,6 +43,8 @@ describe('GFR-G1R7 画面構成', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: '計算方法と判断の考え方' })).toBeInTheDocument();
     expect(screen.getByText(/実質月額 C ＝ 基本月会費/)).toBeInTheDocument();
+    expect(screen.getByText(/両方の有無と必要な金額がそろうまで実質月額を確定表示しません/)).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('入力済み料金の小計');
     expect(screen.getByRole('heading', { name: '会費を払う理由として重要だった利用' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '結論に使う代表的な条件' })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('規則1');

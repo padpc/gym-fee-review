@@ -18,7 +18,7 @@ import {
 
 export type ErrorMap = Record<string, string>;
 export type TimeMode = TimeInput['kind'] | '';
-export type FeeMode = FeeEntry['kind'] | '';
+export type FeeMode = Exclude<FeeEntry['kind'], 'unknown'> | '';
 
 export interface RawValueEntry {
   id: ValueId;
@@ -181,13 +181,13 @@ function validateFeeEntry(
 ): FeeEntry | null {
   const isMonthly = field === 'monthly-additional';
   const modeField = isMonthly ? 'monthly-additional-mode' : 'annual-fee-mode';
-  if (mode !== 'none' && mode !== 'known' && mode !== 'unknown') {
+  if (mode !== 'none' && mode !== 'known') {
     errors[modeField] = isMonthly
       ? '毎月の追加費用があるか選んでください。'
       : '年会費等があるか選んでください。';
     return null;
   }
-  if (mode === 'none' || mode === 'unknown') return { kind: mode };
+  if (mode === 'none') return { kind: 'none' };
 
   const result = validateInteger(
     rawValue,
