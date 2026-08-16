@@ -26,7 +26,7 @@ async function answerBurden(user: User, label = '無理なく払える') {
   await user.click(screen.getByRole('radio', { name: label }));
 }
 
-describe('GFR-G1R7 Calculator', () => {
+describe('GFR-G1R8 Calculator', () => {
   it('料金3区分、風呂・サウナ、館内時間を一つの診断へ反映する', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
@@ -62,11 +62,28 @@ describe('GFR-G1R7 Calculator', () => {
     await user.click(screen.getByRole('checkbox', { name: 'プール・水中運動' }));
     await user.click(screen.getByRole('checkbox', { name: '風呂・温泉・サウナ・休憩' }));
 
-    expect(screen.getAllByRole('group', { name: '期待していた使い方や内容に対して、どうでしたか' })).toHaveLength(3);
+    expect(screen.getByRole('group', { name: '使いたかったトレーニング設備は、期待していた状態にどの程度近かったですか' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'プール・水中運動は、期待していた状態にどの程度近かったですか' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか' })).toBeInTheDocument();
     expect(screen.getByText('追加で選択中：2／2件')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: '指導・フォーム確認' })).toBeDisabled();
+    expect(document.body).not.toHaveTextContent('期待していた使い方や内容に対して、どうでしたか');
+    expect(document.body).not.toHaveTextContent('会費を払う主な理由になる利用がなかった');
     expect(document.body).not.toHaveTextContent('どの程度使いましたか');
     expect(document.body).not.toHaveTextContent('来月また選ぶ');
+  });
+
+  it('入浴設備と通いやすさでは、選択内容に合う質問へ切り替える', async () => {
+    const user = userEvent.setup();
+    render(<Calculator />);
+    const primaryGroup = screen.getByRole('group', { name: '最も重要だったものを1つ選んでください' });
+
+    await user.click(within(primaryGroup).getByRole('radio', { name: '風呂・温泉・サウナ・休憩' }));
+    expect(screen.getByRole('group', { name: '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか' })).toBeInTheDocument();
+
+    await user.click(within(primaryGroup).getByRole('radio', { name: '立地・営業時間・通いやすさ' }));
+    expect(screen.getByRole('group', { name: '立地・営業時間・通いやすさは、実際の生活にどの程度合っていましたか' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか' })).not.toBeInTheDocument();
   });
 
   it('最重要項目を選び直しても補助を自動選択せず、明示選択数だけで上限を制御する', async () => {

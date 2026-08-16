@@ -34,7 +34,7 @@ function normalizePathname(pathname: string): RoutePath {
   return 'not-found';
 }
 
-function FooterLink({ href, currentPath, children }: {
+function NavLink({ href, currentPath, children }: {
   href: Exclude<RoutePath, 'not-found'>;
   currentPath: RoutePath;
   children: ReactNode;
@@ -75,6 +75,11 @@ export default function App() {
           >
             ジム会費、元とれてる？
           </a>
+          <nav className="site-nav" aria-label="主要ナビゲーション">
+            <NavLink href="/" currentPath={path}>ホーム</NavLink>
+            <NavLink href="/check" currentPath={path}>診断する</NavLink>
+            <NavLink href="/methodology" currentPath={path}>計算方法</NavLink>
+          </nav>
         </div>
       </header>
 
@@ -85,12 +90,11 @@ export default function App() {
       <footer className="site-footer">
         <div className="shell site-footer__inner">
           <nav aria-label="フッターナビゲーション">
-            <FooterLink href="/" currentPath={path}>ホーム</FooterLink>
-            <FooterLink href="/check" currentPath={path}>診断する</FooterLink>
-            <FooterLink href="/methodology" currentPath={path}>計算方法</FooterLink>
+            <NavLink href="/" currentPath={path}>ホーム</NavLink>
+            <NavLink href="/check" currentPath={path}>診断する</NavLink>
+            <NavLink href="/methodology" currentPath={path}>計算方法</NavLink>
           </nav>
-          <p>契約を変える前に、契約先の最新料金と条件を公式情報で確認してください。</p>
-          <p>入力は保存・送信しません。活動や時間を勝手な金額へ換算せず、不透明な総合点を出しません。</p>
+          <p>この診断は、入力した内容を整理するための目安です。継続・休会・変更・退会の最終判断はご自身で行ってください。</p>
         </div>
       </footer>
     </>

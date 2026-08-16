@@ -44,6 +44,10 @@ async function tabTo(page: Page, locator: Locator) {
 
 test('ホーム、診断、方法、404の導線に通常の概要を表示する', async ({ page }) => {
   await page.goto('/');
+  const headerNavigation = page.getByRole('navigation', { name: '主要ナビゲーション' });
+  await expect(headerNavigation.getByRole('link', { name: 'ホーム' })).toHaveAttribute('aria-current', 'page');
+  await expect(headerNavigation.getByRole('link', { name: '診断する' })).toBeVisible();
+  await expect(headerNavigation.getByRole('link', { name: '計算方法' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '今の会費に、払い続ける理由があるか整理' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '料金・利用・期待・負担を、一つの結論へまとめます' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '料金明細と来館記録を確認してから始めると、より正確です' })).toBeVisible();
@@ -52,6 +56,9 @@ test('ホーム、診断、方法、404の導線に通常の概要を表示す�
   await expect(page.getByText('最近1か月の4つだけ')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'よくある質問' })).toHaveCount(0);
   await expect(page.locator('form')).toHaveCount(0);
+  await expect(page.getByText('この診断は、入力した内容を整理するための目安です。継続・休会・変更・退会の最終判断はご自身で行ってください。')).toBeVisible();
+  await expect(page.getByText('契約を変える前に、契約先の最新料金と条件を公式情報で確認してください。')).toHaveCount(0);
+  await expect(page.getByText('入力は保存・送信しません。活動や時間を勝手な金額へ換算せず、不透明な総合点を出しません。')).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole('link', { name: 'ジム会費を診断する' }).first().click();
@@ -69,6 +76,30 @@ test('ホーム、診断、方法、404の導線に通常の概要を表示す�
 
   await page.goto('/not-a-page');
   await expect(page.getByRole('heading', { name: 'ページが見つかりません' })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+});
+
+test('重要な利用の選択肢をコンパクトに保ち、選択内容に合う質問へ切り替える', async ({ page }) => {
+  await page.goto('/check');
+  const primary = page.getByRole('group', { name: '最も重要だったものを1つ選んでください' });
+  await expect(page.getByText('会費を払う主な理由になる利用がなかった')).toHaveCount(0);
+
+  const viewport = page.viewportSize();
+  if (viewport && viewport.width >= 700) {
+    const thirdRowCards = await Promise.all([
+      primary.getByRole('radio', { name: '立地・営業時間・通いやすさ' }),
+      primary.getByRole('radio', { name: 'その他' }),
+      primary.getByRole('radio', { name: '特にない' }),
+    ].map((radio) => radio.locator('xpath=ancestor::label[1]').boundingBox()));
+    const heights = thirdRowCards.map((box) => box?.height ?? 0);
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(2);
+  }
+
+  await primary.getByRole('radio', { name: '風呂・温泉・サウナ・休憩' }).check();
+  await expect(page.getByRole('group', { name: '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか' })).toBeVisible();
+  await primary.getByRole('radio', { name: '立地・営業時間・通いやすさ' }).check();
+  await expect(page.getByRole('group', { name: '立地・営業時間・通いやすさは、実際の生活にどの程度合っていましたか' })).toBeVisible();
+  await expect(page.getByRole('group', { name: '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか' })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 
@@ -227,7 +258,7 @@ test('その他の具体名と期待が未回答なら、エラー要約から�
   await expect(page.getByRole('alert')).toContainText('その他の内容を1～80文字で入力してください');
   await expect(page.getByRole('alert')).toContainText('この利用が期待どおりだったか選んでください');
   await expect(page.getByRole('textbox', { name: '具体的な利用' })).toBeFocused();
-  const statusGroup = page.getByRole('group', { name: '期待していた使い方や内容に対して、どうでしたか' });
+  const statusGroup = page.getByRole('group', { name: 'この利用は、会費を払う理由として期待していた状態にどの程度近かったですか' });
   await expect(statusGroup).toHaveAttribute('aria-invalid', 'true');
   await expectNoHorizontalOverflow(page);
 });

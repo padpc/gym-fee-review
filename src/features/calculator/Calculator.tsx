@@ -45,6 +45,17 @@ const fixedErrorOrder = [
   'fee-burden',
 ];
 
+const valueQuestionById: Record<ValueId, string> = {
+  training: '使いたかったトレーニング設備は、期待していた状態にどの程度近かったですか',
+  studio: '参加したかったスタジオ・プログラムは、期待していた状態にどの程度近かったですか',
+  pool: 'プール・水中運動は、期待していた状態にどの程度近かったですか',
+  'bath-sauna': '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか',
+  coaching: '指導・フォーム確認は、期待していた状態にどの程度近かったですか',
+  social: '友人との交流・コミュニティは、期待していた状態にどの程度近かったですか',
+  convenience: '立地・営業時間・通いやすさは、実際の生活にどの程度合っていましたか',
+  other: 'この利用は、会費を払う理由として期待していた状態にどの程度近かったですか',
+};
+
 function errorOrderFor(raw: RawAssessmentInput): string[] {
   return [
     ...fixedErrorOrder.slice(0, fixedErrorOrder.indexOf('fee-burden')),
@@ -291,7 +302,7 @@ function ValueEntryFields({ entry, errors, update }: {
       </div>
       {entry.id === 'other' ? <TextField id={`${prefix}-custom-label`} label="具体的な利用" value={entry.customLabel} error={errors[`${prefix}-custom-label`]} onChange={(customLabel) => update({ ...entry, customLabel })} /> : null}
       <fieldset id={`${prefix}-status`} tabIndex={-1} className={`nested-fieldset value-question ${errors[`${prefix}-status`] ? 'option-section--error' : ''}`} aria-invalid={Boolean(errors[`${prefix}-status`])} aria-describedby={errors[`${prefix}-status`] ? `${prefix}-status-error` : undefined}>
-        <legend>期待していた使い方や内容に対して、どうでしたか</legend>
+        <legend>{valueQuestionById[entry.id]}</legend>
         <div className="choice-grid choice-grid--status">
           {valueStatusOptions.map((option, index) => <ChoiceOption key={option.id} id={`${prefix}-status-${index}`} name={`${prefix}-status`} value={option.id} checked={entry.status === option.id} label={option.label} errorId={errors[`${prefix}-status`] ? `${prefix}-status-error` : undefined} onChange={() => update({ ...entry, status: option.id as ValueStatus })} />)}
         </div>
@@ -341,7 +352,7 @@ function ValuesFields({ raw, errors, update }: {
         <p className="field__hint">利用回数が少なくても、会費を払う一番の理由なら選べます。風呂・サウナだけでも対象です。</p>
         <div className="choice-grid choice-grid--value-options">
           {valueOptions.map((option) => <ChoiceOption key={option.id} id={`primary-value-${option.id}`} name="primary-value" value={option.id} checked={primary?.id === option.id} label={option.label} errorId={errors['primary-value'] ? 'primary-value-error' : undefined} onChange={() => selectPrimary(option.id)} />)}
-          <ChoiceOption id="no-value-used" name="primary-value" value="none" checked={raw.noValueUsed} label="特にない" description="会費を払う主な理由になる利用がなかった" errorId={errors['primary-value'] ? 'primary-value-error' : undefined} onChange={() => selectPrimary('none')} />
+          <ChoiceOption id="no-value-used" name="primary-value" value="none" checked={raw.noValueUsed} label="特にない" errorId={errors['primary-value'] ? 'primary-value-error' : undefined} onChange={() => selectPrimary('none')} />
         </div>
         {errors.values ? <p className="field__error" id="values-error">{errors.values}</p> : null}
         {errors['primary-value'] ? <p className="field__error" id="primary-value-error">{errors['primary-value']}</p> : null}

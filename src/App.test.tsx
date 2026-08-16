@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import App from './App';
 
@@ -12,7 +12,20 @@ afterEach(() => {
   window.history.replaceState({}, '', '/');
 });
 
-describe('GFR-G1R7 画面構成', () => {
+describe('GFR-G1R8 画面構成', () => {
+  it('主要導線を上部に置き、診断は目安で最終判断は利用者が行うと示す', () => {
+    renderAt('/check');
+
+    const headerNavigation = screen.getByRole('navigation', { name: '主要ナビゲーション' });
+    expect(within(headerNavigation).getByRole('link', { name: 'ホーム' })).toHaveAttribute('href', '/');
+    expect(within(headerNavigation).getByRole('link', { name: '診断する' })).toHaveAttribute('aria-current', 'page');
+    expect(within(headerNavigation).getByRole('link', { name: '計算方法' })).toHaveAttribute('href', '/methodology');
+    expect(screen.getByRole('navigation', { name: 'フッターナビゲーション' })).toBeInTheDocument();
+    expect(document.body).toHaveTextContent('この診断は、入力した内容を整理するための目安です。継続・休会・変更・退会の最終判断はご自身で行ってください。');
+    expect(document.body).not.toHaveTextContent('契約を変える前に、契約先の最新料金と条件を公式情報で確認してください。');
+    expect(document.body).not.toHaveTextContent('入力は保存・送信しません。活動や時間を勝手な金額へ換算せず、不透明な総合点を出しません。');
+  });
+
   it('ホームに通常の概要を置き、質問数の訴求とFAQを置かない', () => {
     renderAt('/');
 
