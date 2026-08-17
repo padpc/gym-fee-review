@@ -23,22 +23,26 @@ function input(overrides: Partial<ValidatedAssessmentInput> = {}): ValidatedAsse
   };
 }
 
-describe('GFR-G1R7 ResultSummary', () => {
-  it('結論、支える根拠、見直す根拠、料金、次の一行動、短い限界の順に表示する', async () => {
+describe('GFR-G1R9 ResultSummary', () => {
+  it('結論、文脈別の根拠、料金、具体的な診断後の確認、短い限界の順に表示する', async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();
     render(<ResultSummary result={buildAssessmentResult(input())} headingRef={createRef<HTMLHeadingElement>()} onEdit={onEdit} />);
 
     expect(screen.getByRole('heading', { name: '今の会費を続ける根拠があります' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '結論を支える根拠' }).parentElement).toHaveTextContent('トレーニング設備');
-    expect(screen.getByRole('heading', { name: '見直す根拠' }).parentElement).toHaveTextContent('風呂・温泉・サウナ・休憩');
+    expect(screen.getByRole('heading', { name: '結論を支える根拠' }).parentElement).toHaveTextContent('「トレーニング設備・フリーウェイト」は期待どおり使えた');
+    expect(screen.getByRole('heading', { name: '見直す根拠' }).parentElement).toHaveTextContent('「風呂・温泉・サウナ・休憩」は利用できたが、混雑・清潔さ・設備が期待以下だった');
     expect(screen.getByRole('heading', { name: '実質月額 8,600円' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '来館1回あたり' }).parentElement).toHaveTextContent('1,433円');
     expect(screen.getByRole('heading', { name: '館内利用1時間あたり' }).parentElement).toHaveTextContent('956円');
     const headings = screen.getAllByRole('heading').map((heading) => heading.textContent);
     expect(headings.indexOf('結論を支える根拠')).toBeLessThan(headings.indexOf('見直す根拠'));
     expect(headings.indexOf('見直す根拠')).toBeLessThan(headings.indexOf('実質月額 8,600円'));
-    expect(headings.indexOf('実質月額 8,600円')).toBeLessThan(headings.indexOf('次の一行動'));
+    expect(headings.indexOf('実質月額 8,600円')).toBeLessThan(headings.indexOf('次の確認日をカレンダーへ入れる'));
+    expect(screen.getByText('診断後の確認')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '次の確認日をカレンダーへ入れる' }).parentElement).toHaveTextContent('契約更新日の1か月前');
+    expect(document.body).not.toHaveTextContent('最初にすることを一つに絞る');
+    expect(document.body).not.toHaveTextContent('次の一行動');
     expect(screen.getByText(/全国一律の得する額や契約変更を決めるものではありません/)).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('適用した規則');
 

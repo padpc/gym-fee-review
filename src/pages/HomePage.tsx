@@ -27,17 +27,17 @@ export function HomePage() {
       </section>
 
       <div className="shell home-content">
-        <section className="home-panel" aria-labelledby="overview-heading">
+        <section className="home-panel home-panel--overview" aria-labelledby="overview-heading">
           <p className="eyebrow">診断の概要</p>
           <h2 id="overview-heading">料金・利用・期待・負担を、一つの結論へまとめます</h2>
           <div className="feature-grid">
             <article><h3>料金と利用</h3><p>基本月会費、毎月の追加費、年会費を分けて実質月額を計算し、来館回数と任意の館内利用時間で単価を確認します。</p></article>
             <article><h3>重要だった利用</h3><p>トレーニング、クラス、プール、風呂・温泉・サウナ、指導、交流、通いやすさなどから最大3件を確認します。</p></article>
-            <article><h3>結論と次の行動</h3><p>料金だけを再掲せず、続ける根拠と見直す根拠を分け、最初にすることを一つ示します。</p></article>
+            <article><h3>結論と診断後の確認</h3><p>料金だけを再掲せず、続ける根拠と見直す根拠を分け、次に何をいつ確認するか示します。</p></article>
           </div>
         </section>
 
-        <section className="home-panel" aria-labelledby="prepare-heading">
+        <section className="home-panel home-panel--prepare" aria-labelledby="prepare-heading">
           <p className="eyebrow">入力する内容</p>
           <h2 id="prepare-heading">料金明細と来館記録を確認してから始めると、より正確です</h2>
           <ul className="plain-list">

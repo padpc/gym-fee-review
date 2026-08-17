@@ -17,7 +17,9 @@
     "test:watch": "vitest",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "check": "npm run lint && npm run typecheck && npm run test && npm run test:e2e"
+    "deploy:dry-run": "npm run build && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "preview:worker": "npm run build && wrangler dev --local",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run test:e2e && npm run deploy:dry-run"
   },
   "dependencies": {
     "react": "19.2.8",
@@ -40,6 +42,7 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.65.0",
     "vite": "8.1.5",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "wrangler": "4.123.0"
   }
 }

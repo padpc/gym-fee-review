@@ -127,8 +127,8 @@ export function ResultSummary({ result, headingRef, onEdit }: ResultSummaryProps
       </section>
 
       <section className="result-section next-action" aria-labelledby="next-action-heading">
-        <p className="eyebrow">最初にすることを一つに絞る</p>
-        <h3 id="next-action-heading">次の一行動</h3>
+        <p className="eyebrow">診断後の確認</p>
+        <h3 id="next-action-heading">{recommendation.nextActionTitle}</h3>
         <p>{recommendation.nextAction}</p>
       </section>
 

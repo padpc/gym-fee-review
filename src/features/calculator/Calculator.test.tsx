@@ -15,7 +15,7 @@ async function fillBase(user: User, visits: 'exact' | 'unknown' = 'exact') {
   if (visits === 'exact') await user.type(screen.getByRole('textbox', { name: /^来館回数/ }), '4');
 }
 
-async function selectPrimary(user: User, label: string, status = '期待どおり得られた') {
+async function selectPrimary(user: User, label: string, status: string) {
   await user.click(within(screen.getByRole('group', { name: '最も重要だったものを1つ選んでください' })).getByRole('radio', { name: label }));
   const article = screen.getByRole('heading', { level: 4, name: label }).closest('article');
   if (!article) throw new Error('value article not found');
@@ -26,7 +26,7 @@ async function answerBurden(user: User, label = '無理なく払える') {
   await user.click(screen.getByRole('radio', { name: label }));
 }
 
-describe('GFR-G1R8 Calculator', () => {
+describe('GFR-G1R9 Calculator', () => {
   it('料金3区分、風呂・サウナ、館内時間を一つの診断へ反映する', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
@@ -42,7 +42,7 @@ describe('GFR-G1R8 Calculator', () => {
     await user.type(screen.getByRole('textbox', { name: /^来館回数/ }), '4');
     await user.click(screen.getByRole('radio', { name: '月の合計時間' }));
     await user.type(screen.getByRole('textbox', { name: /^月の合計館内利用時間/ }), '6');
-    await selectPrimary(user, '風呂・温泉・サウナ・休憩');
+    await selectPrimary(user, '風呂・温泉・サウナ・休憩', '期待どおり利用できた');
 
     expect(screen.getByText('計算済みの実質月額').parentElement).toHaveTextContent('8,600円');
     await answerBurden(user);
@@ -62,28 +62,37 @@ describe('GFR-G1R8 Calculator', () => {
     await user.click(screen.getByRole('checkbox', { name: 'プール・水中運動' }));
     await user.click(screen.getByRole('checkbox', { name: '風呂・温泉・サウナ・休憩' }));
 
-    expect(screen.getByRole('group', { name: '使いたかったトレーニング設備は、期待していた状態にどの程度近かったですか' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: 'プール・水中運動は、期待していた状態にどの程度近かったですか' })).toBeInTheDocument();
-    expect(screen.getByRole('group', { name: '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか' })).toBeInTheDocument();
+    const training = screen.getByRole('group', { name: 'トレーニング設備・フリーウェイトは、期待どおり使えましたか' });
+    const pool = screen.getByRole('group', { name: 'プール・水中運動は、期待どおり利用できましたか' });
+    const bath = screen.getByRole('group', { name: '風呂・温泉・サウナ・休憩設備は、期待どおり利用できましたか' });
+    expect(within(training).getByRole('radio', { name: '一部の設備・時間帯だけ使えた' })).toBeInTheDocument();
+    expect(within(pool).getByRole('radio', { name: '一部の時間・内容だけ利用できた' })).toBeInTheDocument();
+    expect(within(bath).getByRole('radio', { name: '利用できたが、混雑・清潔さ・設備が期待以下だった' })).toBeInTheDocument();
     expect(screen.getByText('追加で選択中：2／2件')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: '指導・フォーム確認' })).toBeDisabled();
     expect(document.body).not.toHaveTextContent('期待していた使い方や内容に対して、どうでしたか');
     expect(document.body).not.toHaveTextContent('会費を払う主な理由になる利用がなかった');
     expect(document.body).not.toHaveTextContent('どの程度使いましたか');
     expect(document.body).not.toHaveTextContent('来月また選ぶ');
+    expect(document.body).not.toHaveTextContent('期待どおり得られた');
   });
 
-  it('入浴設備と通いやすさでは、選択内容に合う質問へ切り替える', async () => {
+  it('スタジオと通いやすさで質問と5回答を同時に切り替える', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
     const primaryGroup = screen.getByRole('group', { name: '最も重要だったものを1つ選んでください' });
 
-    await user.click(within(primaryGroup).getByRole('radio', { name: '風呂・温泉・サウナ・休憩' }));
-    expect(screen.getByRole('group', { name: '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか' })).toBeInTheDocument();
+    await user.click(within(primaryGroup).getByRole('radio', { name: 'スタジオ・プログラム' }));
+    const studio = screen.getByRole('group', { name: 'スタジオ・プログラムは、期待どおり参加できましたか' });
+    expect(within(studio).getByRole('radio', { name: '期待どおり参加できた' })).toBeInTheDocument();
+    expect(within(studio).getByRole('radio', { name: '参加できたが、内容や進め方が期待以下だった' })).toBeInTheDocument();
 
     await user.click(within(primaryGroup).getByRole('radio', { name: '立地・営業時間・通いやすさ' }));
-    expect(screen.getByRole('group', { name: '立地・営業時間・通いやすさは、実際の生活にどの程度合っていましたか' })).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか' })).not.toBeInTheDocument();
+    const convenience = screen.getByRole('group', { name: '立地・営業時間・通いやすさは、実際の生活に合っていましたか' });
+    expect(within(convenience).getByRole('radio', { name: '生活に合い、無理なく通えた' })).toBeInTheDocument();
+    expect(within(convenience).getByRole('radio', { name: '生活に合わず、ほとんど通えなかった' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'スタジオ・プログラムは、期待どおり参加できましたか' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: '期待どおり参加できた' })).not.toBeInTheDocument();
   });
 
   it('最重要項目を選び直しても補助を自動選択せず、明示選択数だけで上限を制御する', async () => {
@@ -138,6 +147,21 @@ describe('GFR-G1R8 Calculator', () => {
     await waitFor(() => expect(screen.getByRole('textbox', { name: '具体的な利用' })).toHaveFocus());
   });
 
+  it('その他の入力内容を質問へ通常テキストとして反映し、HTMLとして解釈しない', async () => {
+    const user = userEvent.setup();
+    render(<Calculator />);
+
+    await user.click(screen.getByRole('radio', { name: 'その他' }));
+    expect(screen.getByRole('group', { name: 'その他の利用は、期待どおりでしたか' })).toBeInTheDocument();
+
+    const unsafeText = '<img src=x onerror=alert(1)>';
+    await user.type(screen.getByRole('textbox', { name: '具体的な利用' }), unsafeText);
+
+    const question = screen.getByRole('group', { name: `「${unsafeText}」は、期待どおりでしたか` });
+    expect(within(question).getByRole('radio', { name: '期待どおりだった' })).toBeInTheDocument();
+    expect(document.querySelector('img')).toBeNull();
+  });
+
   it('重要な利用が未選択なら要約リンクとフォーカス先を同じグループにする', async () => {
     const user = userEvent.setup();
     render(<Calculator />);
@@ -180,7 +204,7 @@ describe('GFR-G1R8 Calculator', () => {
     render(<Calculator />);
 
     await fillBase(user, 'unknown');
-    await selectPrimary(user, '立地・営業時間・通いやすさ');
+    await selectPrimary(user, '立地・営業時間・通いやすさ', '生活に合い、無理なく通えた');
     await answerBurden(user);
     await user.click(screen.getByRole('button', { name: '診断結果を見る' }));
 
@@ -195,7 +219,7 @@ describe('GFR-G1R8 Calculator', () => {
     render(<Calculator />);
 
     await fillBase(user);
-    await selectPrimary(user, 'トレーニング設備・フリーウェイト');
+    await selectPrimary(user, 'トレーニング設備・フリーウェイト', '期待どおり使えた');
     await user.clear(screen.getByRole('textbox', { name: /^来館回数/ }));
     await user.type(screen.getByRole('textbox', { name: /^来館回数/ }), '0');
 
@@ -225,14 +249,14 @@ describe('GFR-G1R8 Calculator', () => {
     render(<Calculator />);
 
     await fillBase(user);
-    await selectPrimary(user, 'トレーニング設備・フリーウェイト');
+    await selectPrimary(user, 'トレーニング設備・フリーウェイト', '期待どおり使えた');
     await answerBurden(user);
     await user.click(screen.getByRole('button', { name: '診断結果を見る' }));
     await user.click(await screen.findByRole('button', { name: '入力を修正' }));
 
     expect(screen.getByRole('textbox', { name: /^基本月会費/ })).toHaveValue('8000');
     expect(screen.getByRole('radio', { name: 'トレーニング設備・フリーウェイト' })).toBeChecked();
-    expect(screen.getByRole('radio', { name: '期待どおり得られた' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: '期待どおり使えた' })).toBeChecked();
   });
 
   it('不正な館内利用時間方式をエラー文とラジオグループへ関連付ける', async () => {

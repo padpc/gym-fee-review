@@ -1,9 +1,12 @@
-import { type FormEvent, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { trackEvent } from '../../analytics/events';
 import { ErrorSummary } from '../../components/ErrorSummary';
 import { NumericField } from '../../components/NumericField';
 import {
   buildAssessmentResult,
   feeBurdenOptions,
+  getValueQuestion,
+  getValueStatusLabel,
   valueOptions,
   valueStatusOptions,
   visitBandOptions,
@@ -44,17 +47,6 @@ const fixedErrorOrder = [
   'secondary-values',
   'fee-burden',
 ];
-
-const valueQuestionById: Record<ValueId, string> = {
-  training: '使いたかったトレーニング設備は、期待していた状態にどの程度近かったですか',
-  studio: '参加したかったスタジオ・プログラムは、期待していた状態にどの程度近かったですか',
-  pool: 'プール・水中運動は、期待していた状態にどの程度近かったですか',
-  'bath-sauna': '風呂・温泉・サウナ・休憩は、期待していた状態にどの程度近かったですか',
-  coaching: '指導・フォーム確認は、期待していた状態にどの程度近かったですか',
-  social: '友人との交流・コミュニティは、期待していた状態にどの程度近かったですか',
-  convenience: '立地・営業時間・通いやすさは、実際の生活にどの程度合っていましたか',
-  other: 'この利用は、会費を払う理由として期待していた状態にどの程度近かったですか',
-};
 
 function errorOrderFor(raw: RawAssessmentInput): string[] {
   return [
@@ -302,9 +294,9 @@ function ValueEntryFields({ entry, errors, update }: {
       </div>
       {entry.id === 'other' ? <TextField id={`${prefix}-custom-label`} label="具体的な利用" value={entry.customLabel} error={errors[`${prefix}-custom-label`]} onChange={(customLabel) => update({ ...entry, customLabel })} /> : null}
       <fieldset id={`${prefix}-status`} tabIndex={-1} className={`nested-fieldset value-question ${errors[`${prefix}-status`] ? 'option-section--error' : ''}`} aria-invalid={Boolean(errors[`${prefix}-status`])} aria-describedby={errors[`${prefix}-status`] ? `${prefix}-status-error` : undefined}>
-        <legend>{valueQuestionById[entry.id]}</legend>
+        <legend>{getValueQuestion(entry.id, entry.customLabel)}</legend>
         <div className="choice-grid choice-grid--status">
-          {valueStatusOptions.map((option, index) => <ChoiceOption key={option.id} id={`${prefix}-status-${index}`} name={`${prefix}-status`} value={option.id} checked={entry.status === option.id} label={option.label} errorId={errors[`${prefix}-status`] ? `${prefix}-status-error` : undefined} onChange={() => update({ ...entry, status: option.id as ValueStatus })} />)}
+          {valueStatusOptions.map((option, index) => <ChoiceOption key={option.id} id={`${prefix}-status-${index}`} name={`${prefix}-status`} value={option.id} checked={entry.status === option.id} label={getValueStatusLabel(entry.id, option.id)} errorId={errors[`${prefix}-status`] ? `${prefix}-status-error` : undefined} onChange={() => update({ ...entry, status: option.id as ValueStatus })} />)}
         </div>
         {errors[`${prefix}-status`] ? <p className="field__error" id={`${prefix}-status-error`}>{errors[`${prefix}-status`]}</p> : null}
       </fieldset>
@@ -450,6 +442,10 @@ export function Calculator({ initialRaw }: { initialRaw?: RawAssessmentInput } =
   const formHeadingRef = useRef<HTMLHeadingElement>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
 
+  useEffect(() => {
+    trackEvent('calculator_view');
+  }, []);
+
   function update<K extends keyof RawAssessmentInput>(key: K, value: RawAssessmentInput[K]) {
     setRaw((current) => ({ ...current, [key]: value }));
     setErrors((current) => {
@@ -495,6 +491,7 @@ export function Calculator({ initialRaw }: { initialRaw?: RawAssessmentInput } =
     }
     setErrors({});
     setResult(buildAssessmentResult(validation.value));
+    trackEvent('main_calculation_complete');
     requestAnimationFrame(() => resultHeadingRef.current?.focus());
   }
 

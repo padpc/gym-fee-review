@@ -6,12 +6,16 @@ import {
   calculateMonthlyEquivalent,
   calculatePerHourResult,
   calculatePerVisitResult,
+  getValueQuestion,
+  getValueStatusLabel,
   recommendationHeadlines,
+  valueStatusOptions,
   type FeeBurden,
   type FeeValues,
   type RecommendationKind,
   type ValidatedAssessmentInput,
   type ValueAssessmentInput,
+  type ValueId,
   type ValueStatus,
 } from './assessment';
 import { yenToUnits } from './money';
@@ -45,6 +49,101 @@ function input(overrides: Partial<ValidatedAssessmentInput> = {}): ValidatedAsse
     ...overrides,
   };
 }
+
+const valueCopyCases: Array<{
+  id: ValueId;
+  question: string;
+  labels: Record<ValueStatus, string>;
+}> = [
+  {
+    id: 'training',
+    question: 'トレーニング設備・フリーウェイトは、期待どおり使えましたか',
+    labels: {
+      fulfilled: '期待どおり使えた',
+      partial: '一部の設備・時間帯だけ使えた',
+      'quality-below': '使えたが、設備や混雑状況が期待以下だった',
+      'not-used': '使いたかったが、ほとんど使えなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  {
+    id: 'studio',
+    question: 'スタジオ・プログラムは、期待どおり参加できましたか',
+    labels: {
+      fulfilled: '期待どおり参加できた',
+      partial: '一部のプログラム・日時だけ参加できた',
+      'quality-below': '参加できたが、内容や進め方が期待以下だった',
+      'not-used': '参加したかったが、ほとんど参加できなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  {
+    id: 'pool',
+    question: 'プール・水中運動は、期待どおり利用できましたか',
+    labels: {
+      fulfilled: '期待どおり利用できた',
+      partial: '一部の時間・内容だけ利用できた',
+      'quality-below': '利用できたが、混雑や利用環境が期待以下だった',
+      'not-used': '利用したかったが、ほとんど利用できなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  {
+    id: 'bath-sauna',
+    question: '風呂・温泉・サウナ・休憩設備は、期待どおり利用できましたか',
+    labels: {
+      fulfilled: '期待どおり利用できた',
+      partial: '一部の設備・時間だけ利用できた',
+      'quality-below': '利用できたが、混雑・清潔さ・設備が期待以下だった',
+      'not-used': '利用したかったが、ほとんど利用できなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  {
+    id: 'coaching',
+    question: '指導・フォーム確認は、期待どおり受けられましたか',
+    labels: {
+      fulfilled: '必要な指導・確認を受けられた',
+      partial: '必要な指導・確認を一部受けられた',
+      'quality-below': '受けられたが、内容や分かりやすさが期待以下だった',
+      'not-used': '受けたかったが、ほとんど受けられなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  {
+    id: 'social',
+    question: '期待していた交流やコミュニティとの関わりができましたか',
+    labels: {
+      fulfilled: '期待していた交流ができた',
+      partial: '期待していた交流が一部できた',
+      'quality-below': '交流できたが、雰囲気や関わり方が期待以下だった',
+      'not-used': '交流したかったが、ほとんど機会がなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  {
+    id: 'convenience',
+    question: '立地・営業時間・通いやすさは、実際の生活に合っていましたか',
+    labels: {
+      fulfilled: '生活に合い、無理なく通えた',
+      partial: '一部の曜日・時間帯だけ生活に合っていた',
+      'quality-below': '通えたが、立地や営業時間が期待ほど便利ではなかった',
+      'not-used': '生活に合わず、ほとんど通えなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  {
+    id: 'other',
+    question: 'その他の利用は、期待どおりでしたか',
+    labels: {
+      fulfilled: '期待どおりだった',
+      partial: '一部は期待どおりだった',
+      'quality-below': '利用できたが、内容や状態が期待以下だった',
+      'not-used': '期待していたが、ほとんど実現しなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+];
 
 describe('R7 料金計算', () => {
   it('基本月会費・毎月追加費・年会費を1/12円精度で合算し、表示時だけ丸める', () => {
@@ -164,7 +263,34 @@ describe('R7 料金計算', () => {
   });
 });
 
-describe('R7 価値根拠', () => {
+describe('R9 選択内容別の質問と回答', () => {
+  it.each(valueCopyCases)('$idの質問と5回答を一組で返し、内部状態の分類を変えない', ({ id, question, labels }) => {
+    const expectedEvidence: Record<ValueStatus, 'strong' | 'mixed' | 'weak' | 'uncertain'> = {
+      fulfilled: 'strong',
+      partial: 'mixed',
+      'quality-below': 'weak',
+      'not-used': 'weak',
+      unknown: 'uncertain',
+    };
+
+    expect(getValueQuestion(id)).toBe(question);
+    for (const { id: status } of valueStatusOptions) {
+      expect(getValueStatusLabel(id, status)).toBe(labels[status]);
+      const summary = buildValueSummary([value({ id, status })]);
+      expect(summary.primary?.statusLabel).toBe(labels[status]);
+      expect(summary.evidence).toBe(expectedEvidence[status]);
+    }
+  });
+
+  it('その他の入力内容を質問へ通常文字列として反映する', () => {
+    expect(getValueQuestion('other', '  仕事前の気分転換  '))
+      .toBe('「仕事前の気分転換」は、期待どおりでしたか');
+    expect(getValueQuestion('other', '<img src=x onerror=alert(1)>'))
+      .toBe('「<img src=x onerror=alert(1)>」は、期待どおりでしたか');
+  });
+});
+
+describe('R9 価値根拠', () => {
   it('主な価値が期待どおりなら強い根拠とし、追加価値の弱点も隠さない', () => {
     const summary = buildValueSummary([
       value({ id: 'bath-sauna' }),
@@ -173,9 +299,9 @@ describe('R7 価値根拠', () => {
     ]);
     expect(summary.evidence).toBe('strong');
     expect(summary.primary?.label).toContain('風呂');
-    expect(summary.supportReasons).toEqual(['「風呂・温泉・サウナ・休憩」は期待どおり得られた']);
+    expect(summary.supportReasons).toEqual(['「風呂・温泉・サウナ・休憩」は期待どおり利用できた']);
     expect(summary.gapReasons).toEqual([
-      '「スタジオ・プログラム」は利用したが、内容・質が期待以下だった',
+      '「スタジオ・プログラム」は参加できたが、内容や進め方が期待以下だった',
       '「プール・水中運動」はまだ判断できない',
     ]);
   });
@@ -215,18 +341,18 @@ describe('R7 価値根拠', () => {
     expect(hidden.primary?.label).toBe('トレーニング設備・フリーウェイト');
   });
 
-  it('一部得られた価値は異なる意味で支える根拠と見直す根拠の両方へ残す', () => {
+  it('一部だけ満たした価値は異なる意味で支える根拠と見直す根拠の両方へ残す', () => {
     const summary = buildValueSummary([value({ status: 'partial' })]);
     expect(summary.supportReasons).toEqual([
-      '「トレーニング設備・フリーウェイト」は一部得られ、会費を支える材料がある',
+      '「トレーニング設備・フリーウェイト」は一部の設備・時間帯だけ使えたため、会費を支える材料がある',
     ]);
     expect(summary.gapReasons).toEqual([
-      '「トレーニング設備・フリーウェイト」は一部に留まり、満たしていない点が残る',
+      '「トレーニング設備・フリーウェイト」は一部の設備・時間帯だけ使えたが、満たしていない点が残る',
     ]);
   });
 });
 
-describe('R7 結論', () => {
+describe('R9 結論', () => {
   const primaryStatuses = [
     'fulfilled',
     'partial',
@@ -317,40 +443,59 @@ describe('R7 結論', () => {
 
   it.each([
     {
-      name: '料金不明を最優先',
+      name: '料金未確定を最優先し、確認時期と確認場所を示す',
       fees: fees({ annualFee: { kind: 'unknown' } }),
       burden: 'review-needed' as const,
       status: 'quality-below' as const,
-      text: '年会費等を契約書や料金明細で確認',
+      title: '支払総額を確定する',
+      texts: ['次の支払い前', '契約書または直近の料金明細', '年会費等の金額'],
     },
     {
-      name: '家計見直しを次に優先',
+      name: '内容・質の期待以下では条件変更を優先する',
       fees: fees(),
       burden: 'review-needed' as const,
       status: 'quality-below' as const,
-      text: '家計負担を減らせる条件',
+      title: '期待以下だった条件を一つ変えて確かめる',
+      texts: ['次の利用前', '会員ページまたは受付', '条件だけを変え'],
     },
     {
-      name: '内容・質の期待以下を具体化',
-      fees: fees(),
-      burden: 'comfortable' as const,
-      status: 'quality-below' as const,
-      text: '内容・質が期待以下だった条件',
-    },
-    {
-      name: 'ほぼ未利用の条件を具体化',
+      name: 'ほぼ未利用では利用条件の確認を優先する',
       fees: fees(),
       burden: 'slight-burden' as const,
       status: 'not-used' as const,
-      text: 'ほぼ使えなかった条件',
+      title: '一番大事な利用を実現できる条件を確認する',
+      texts: ['次の利用を決める前', '会員ページまたは受付', '曜日・時間・予約条件'],
     },
-  ])('次行動は$nameする', ({ fees: feeInput, burden, status, text }) => {
+  ])('診断後の確認は$name', ({ fees: feeInput, burden, status, title, texts }) => {
     const result = buildAssessmentResult(input({
       fees: feeInput,
       feeBurden: burden,
       values: [value({ status })],
     }));
-    expect(result.recommendation.nextAction).toContain(text);
+    expect(result.recommendation.nextActionTitle).toBe(title);
+    for (const text of texts) expect(result.recommendation.nextAction).toContain(text);
+  });
+
+  it('4結論の基本確認を、具体的な見出しと場所・時期・対象で返す', () => {
+    const keep = buildAssessmentResult(input());
+    expect(keep.recommendation.nextActionTitle).toBe('次の確認日をカレンダーへ入れる');
+    expect(keep.recommendation.nextAction).toContain('契約更新日の1か月前');
+    expect(keep.recommendation.nextAction).toContain('この診断');
+
+    const checkFees = buildAssessmentResult(input({ feeBurden: 'slight-burden' }));
+    expect(checkFees.recommendation.nextActionTitle).toBe('同じ利用を続けられる安い条件を探す');
+    expect(checkFees.recommendation.nextAction).toContain('次の契約更新前');
+    expect(checkFees.recommendation.nextAction).toContain('料金表または会員ページ');
+
+    const verify = buildAssessmentResult(input({ values: [value({ status: 'partial' })] }));
+    expect(verify.recommendation.nextActionTitle).toBe('一番大事な利用を1か月記録する');
+    expect(verify.recommendation.nextAction).toContain('スマホのカレンダー');
+    expect(verify.recommendation.nextAction).toContain('1か月後にもう一度診断');
+
+    const review = buildAssessmentResult(input({ values: [] }));
+    expect(review.recommendation.nextActionTitle).toBe('休会・変更・退会の条件を比べる');
+    expect(review.recommendation.nextAction).toContain('次の会費が発生する前');
+    expect(review.recommendation.nextAction).toContain('会員ページまたは契約書');
   });
 
   it('不明料金があれば強い継続断定を避け、入力済み小計と内訳確認を優先する', () => {
@@ -364,6 +509,7 @@ describe('R7 結論', () => {
     expect(result.recommendation.kind).toBe('keep-check-fees');
     expect(result.recommendation.headline).toBe(recommendationHeadlines['keep-check-fees']);
     expect(result.recommendation.reviewReasons.join(' ')).toContain('入力済み金額だけ');
+    expect(result.recommendation.nextActionTitle).toBe('支払総額を確定する');
     expect(result.recommendation.nextAction).toContain('毎月の追加費用と年会費等');
   });
 
@@ -381,8 +527,9 @@ describe('R7 結論', () => {
     for (const status of ['partial', 'unknown'] as const) {
       const result = buildAssessmentResult(input({ values: [value({ status })] }));
       expect(result.recommendation.kind).toBe('verify-value');
-      expect(result.recommendation.nextAction).toContain('来館日');
-      expect(result.recommendation.nextAction).toContain('主な理由の実感');
+      expect(result.recommendation.nextActionTitle).toBe('一番大事な利用を1か月記録する');
+      expect(result.recommendation.nextAction).toContain('ジムへ行った日');
+      expect(result.recommendation.nextAction).toContain('期待どおりだったか');
     }
   });
 
@@ -392,9 +539,12 @@ describe('R7 結論', () => {
     expect(once.recommendation.kind).toBe('keep');
     expect(unknown.recommendation.kind).toBe('keep');
     expect(once.recommendation.supportReasons.join(' ')).toContain('1回来館');
-    expect(once.recommendation.nextAction).toContain('1か月後または契約更新前');
+    expect(once.recommendation.nextActionTitle).toBe('次の確認日をカレンダーへ入れる');
+    expect(once.recommendation.nextAction).toContain('契約更新日の1か月前');
     expect(unknown.recommendation.reviewReasons.join(' ')).toContain('来館回数が分からず');
-    expect(unknown.recommendation.nextAction).toContain('来館日');
+    expect(unknown.recommendation.nextActionTitle).toBe('来館日を1か月記録する');
+    expect(unknown.recommendation.nextAction).toContain('スマホのカレンダー');
+    expect(unknown.recommendation.nextAction).toContain('トレーニング設備・フリーウェイト');
     expect(once.perVisit).not.toEqual(unknown.perVisit);
   });
 

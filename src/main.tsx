@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { loadWebAnalytics } from './analytics/webAnalytics';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Root element was not found.');
@@ -10,3 +11,5 @@ createRoot(root).render(
     <App />
   </StrictMode>,
 );
+
+loadWebAnalytics();

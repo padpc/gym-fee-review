@@ -133,14 +133,107 @@ export type ValueId = (typeof valueOptions)[number]['id'];
 export type ValueRole = 'primary' | 'secondary';
 
 export const valueStatusOptions = [
-  { id: 'fulfilled', label: '期待どおり得られた' },
-  { id: 'partial', label: '一部得られた' },
-  { id: 'quality-below', label: '利用したが、内容・質が期待以下だった' },
-  { id: 'not-used', label: '利用したかったが、ほぼ使えなかった' },
-  { id: 'unknown', label: 'まだ判断できない' },
+  { id: 'fulfilled' },
+  { id: 'partial' },
+  { id: 'quality-below' },
+  { id: 'not-used' },
+  { id: 'unknown' },
 ] as const;
 
 export type ValueStatus = (typeof valueStatusOptions)[number]['id'];
+
+interface ValueAssessmentCopy {
+  question: (customLabel: string) => string;
+  statusLabels: Record<ValueStatus, string>;
+}
+
+export const valueAssessmentCopy = {
+  training: {
+    question: () => 'トレーニング設備・フリーウェイトは、期待どおり使えましたか',
+    statusLabels: {
+      fulfilled: '期待どおり使えた',
+      partial: '一部の設備・時間帯だけ使えた',
+      'quality-below': '使えたが、設備や混雑状況が期待以下だった',
+      'not-used': '使いたかったが、ほとんど使えなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  studio: {
+    question: () => 'スタジオ・プログラムは、期待どおり参加できましたか',
+    statusLabels: {
+      fulfilled: '期待どおり参加できた',
+      partial: '一部のプログラム・日時だけ参加できた',
+      'quality-below': '参加できたが、内容や進め方が期待以下だった',
+      'not-used': '参加したかったが、ほとんど参加できなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  pool: {
+    question: () => 'プール・水中運動は、期待どおり利用できましたか',
+    statusLabels: {
+      fulfilled: '期待どおり利用できた',
+      partial: '一部の時間・内容だけ利用できた',
+      'quality-below': '利用できたが、混雑や利用環境が期待以下だった',
+      'not-used': '利用したかったが、ほとんど利用できなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  'bath-sauna': {
+    question: () => '風呂・温泉・サウナ・休憩設備は、期待どおり利用できましたか',
+    statusLabels: {
+      fulfilled: '期待どおり利用できた',
+      partial: '一部の設備・時間だけ利用できた',
+      'quality-below': '利用できたが、混雑・清潔さ・設備が期待以下だった',
+      'not-used': '利用したかったが、ほとんど利用できなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  coaching: {
+    question: () => '指導・フォーム確認は、期待どおり受けられましたか',
+    statusLabels: {
+      fulfilled: '必要な指導・確認を受けられた',
+      partial: '必要な指導・確認を一部受けられた',
+      'quality-below': '受けられたが、内容や分かりやすさが期待以下だった',
+      'not-used': '受けたかったが、ほとんど受けられなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  social: {
+    question: () => '期待していた交流やコミュニティとの関わりができましたか',
+    statusLabels: {
+      fulfilled: '期待していた交流ができた',
+      partial: '期待していた交流が一部できた',
+      'quality-below': '交流できたが、雰囲気や関わり方が期待以下だった',
+      'not-used': '交流したかったが、ほとんど機会がなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  convenience: {
+    question: () => '立地・営業時間・通いやすさは、実際の生活に合っていましたか',
+    statusLabels: {
+      fulfilled: '生活に合い、無理なく通えた',
+      partial: '一部の曜日・時間帯だけ生活に合っていた',
+      'quality-below': '通えたが、立地や営業時間が期待ほど便利ではなかった',
+      'not-used': '生活に合わず、ほとんど通えなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+  other: {
+    question: (customLabel) => {
+      const label = customLabel.trim();
+      return label
+        ? `「${label}」は、期待どおりでしたか`
+        : 'その他の利用は、期待どおりでしたか';
+    },
+    statusLabels: {
+      fulfilled: '期待どおりだった',
+      partial: '一部は期待どおりだった',
+      'quality-below': '利用できたが、内容や状態が期待以下だった',
+      'not-used': '期待していたが、ほとんど実現しなかった',
+      unknown: 'まだ判断できない',
+    },
+  },
+} satisfies Record<ValueId, ValueAssessmentCopy>;
 
 export interface ValueAssessmentInput {
   id: ValueId;
@@ -191,6 +284,7 @@ export interface Recommendation {
   headline: string;
   supportReasons: string[];
   reviewReasons: string[];
+  nextActionTitle: string;
   nextAction: string;
 }
 
@@ -376,8 +470,12 @@ export function getValueLabel(id: ValueId): string {
   return valueOptions.find((option) => option.id === id)?.label ?? id;
 }
 
-export function getValueStatusLabel(status: ValueStatus): string {
-  return valueStatusOptions.find((option) => option.id === status)?.label ?? status;
+export function getValueQuestion(id: ValueId, customLabel = ''): string {
+  return valueAssessmentCopy[id].question(customLabel);
+}
+
+export function getValueStatusLabel(id: ValueId, status: ValueStatus): string {
+  return valueAssessmentCopy[id].statusLabels[status];
 }
 
 function describeValue(value: ValueAssessment): string {
@@ -386,13 +484,13 @@ function describeValue(value: ValueAssessment): string {
 
 function describeSupportValue(value: ValueAssessment): string {
   return value.status === 'partial'
-    ? `「${value.label}」は一部得られ、会費を支える材料がある`
+    ? `「${value.label}」は${value.statusLabel}ため、会費を支える材料がある`
     : describeValue(value);
 }
 
 function describeGapValue(value: ValueAssessment): string {
   return value.status === 'partial'
-    ? `「${value.label}」は一部に留まり、満たしていない点が残る`
+    ? `「${value.label}」は${value.statusLabel}が、満たしていない点が残る`
     : describeValue(value);
 }
 
@@ -402,7 +500,7 @@ export function buildValueSummary(values: ValueAssessmentInput[]): ValueSummary 
     label: value.id === 'other' && value.customLabel.trim()
       ? value.customLabel.trim()
       : getValueLabel(value.id),
-    statusLabel: getValueStatusLabel(value.status),
+    statusLabel: getValueStatusLabel(value.id, value.status),
   }));
   const primary = assessments.find((value) => value.role === 'primary') ?? null;
   const secondary = assessments.filter((value) => value.role === 'secondary');
@@ -484,10 +582,14 @@ function buildRecommendation(
   }
 
   const incompleteFeeAction = monthly.kind === 'known-subtotal'
-    ? `${monthly.unknownFees.includes('monthly-additional') ? '毎月の追加費用' : ''}${monthly.unknownFees.length === 2 ? 'と' : ''}${monthly.unknownFees.includes('annual-fee') ? '年会費等' : ''}を契約書や料金明細で確認し、総額を入れ直す。`
+    ? {
+        title: '支払総額を確定する',
+        description: `次の支払い前に、契約書または直近の料金明細で${monthly.unknownFees.includes('monthly-additional') ? '毎月の追加費用' : ''}${monthly.unknownFees.length === 2 ? 'と' : ''}${monthly.unknownFees.includes('annual-fee') ? '年会費等' : ''}の金額を確認し、この診断へ入力し直す。`,
+      }
     : null;
 
   const primaryStatus = valueSummary.primary?.status;
+  const primaryLabel = valueSummary.primary?.label ?? '主な利用';
   const mustReview = (
     (visits.kind === 'exact' && visits.visits === 0)
     || primaryStatus === undefined
@@ -499,22 +601,23 @@ function buildRecommendation(
 
   if (mustReview) {
     if (!primaryStatus) reviewReasons.unshift('会費を払う主な理由になる利用は特にない');
-    let nextAction = '休会・低料金プラン・退会の条件を1つ確認し、今の契約と比べる。';
-    if (primaryStatus === 'quality-below') {
-      nextAction = '次の利用までに、主な価値の内容・質が期待以下だった条件を1つ確認する。';
-    } else if (primaryStatus === 'not-used') {
-      nextAction = '次の利用までに、主な価値をほぼ使えなかった条件を1つ確認する。';
-    }
-    if (feeBurden === 'review-needed') {
-      nextAction = '休会・低料金プラン・退会の条件を1つ確認し、家計負担を減らせる条件と比べる。';
+    let nextActionTitle = '休会・変更・退会の条件を比べる';
+    let nextAction = '次の会費が発生する前に、会員ページまたは契約書で、休会・低料金プラン・退会の費用・申請期限・適用日を確認し、今の実質月額と比べる。';
+    const hasNoRecentUse = visits.kind === 'exact' && visits.visits === 0;
+    if (!hasNoRecentUse && primaryStatus === 'quality-below') {
+      nextActionTitle = '期待以下だった条件を一つ変えて確かめる';
+      nextAction = `次の利用前に、会員ページまたは受付で、「${primaryLabel}」の曜日・時間帯・担当・混雑など変更できる条件を一つ確認する。次の利用ではその条件だけを変え、期待に近づくか確かめる。`;
+    } else if (!hasNoRecentUse && primaryStatus === 'not-used') {
+      nextActionTitle = '一番大事な利用を実現できる条件を確認する';
+      nextAction = `次の利用を決める前に、会員ページまたは受付で「${primaryLabel}」を利用できる曜日・時間・予約条件を確認し、自分の予定に合う枠があるか確かめる。`;
     }
     return {
       kind: 'review-contract',
       headline: recommendationHeadlines['review-contract'],
       supportReasons,
       reviewReasons,
-      nextAction: incompleteFeeAction
-        ?? nextAction,
+      nextActionTitle: incompleteFeeAction?.title ?? nextActionTitle,
+      nextAction: incompleteFeeAction?.description ?? nextAction,
     };
   }
 
@@ -524,30 +627,40 @@ function buildRecommendation(
       headline: recommendationHeadlines['verify-value'],
       supportReasons,
       reviewReasons,
-      nextAction: incompleteFeeAction
-        ?? '次の1か月だけ、来館日と会費を払う主な理由の実感を記録する。',
+      nextActionTitle: incompleteFeeAction?.title ?? '一番大事な利用を1か月記録する',
+      nextAction: incompleteFeeAction?.description
+        ?? `次の1か月、ジムへ行った日と「${primaryLabel}」を使えたか・期待どおりだったかをスマホのカレンダーへ短く記録し、1か月後にもう一度診断する。`,
     };
   }
 
   if (monthly.kind === 'complete' && feeBurden === 'comfortable') {
+    const visitsAreUnknown = visits.kind === 'unknown';
     return {
       kind: 'keep',
       headline: recommendationHeadlines.keep,
       supportReasons,
       reviewReasons,
-      nextAction: visits.kind === 'unknown'
-        ? '次の1か月だけ、来館日と会費を払う主な理由の実感を記録する。'
-        : '1か月後または契約更新前のどちらかを、次に見直す日として決める。',
+      nextActionTitle: visitsAreUnknown
+        ? '来館日を1か月記録する'
+        : '次の確認日をカレンダーへ入れる',
+      nextAction: visitsAreUnknown
+        ? `次の1か月、ジムへ行った日と「${primaryLabel}」を使えたかをスマホのカレンダーへ記録し、1か月後に1回あたり料金をこの診断で確認する。`
+        : `契約更新日の1か月前（更新日がなければ1か月後）を、実質月額・来館回数・「${primaryLabel}」をこの診断で確認する日としてカレンダーへ登録する。`,
     };
   }
 
+  const visitsAreUnknown = visits.kind === 'unknown';
   return {
     kind: 'keep-check-fees',
     headline: recommendationHeadlines['keep-check-fees'],
     supportReasons,
     reviewReasons,
-    nextAction: incompleteFeeAction
-      ?? '得られている価値を保てる低料金プラン・割引・休会条件を1つ確認する。',
+    nextActionTitle: incompleteFeeAction?.title
+      ?? (visitsAreUnknown ? '来館日を1か月記録する' : '同じ利用を続けられる安い条件を探す'),
+    nextAction: incompleteFeeAction?.description
+      ?? (visitsAreUnknown
+        ? `次の1か月、ジムへ行った日と「${primaryLabel}」を使えたかをスマホのカレンダーへ記録し、1か月後に1回あたり料金をこの診断で確認する。`
+        : `次の契約更新前に、施設の料金表または会員ページで「${primaryLabel}」を使える低料金プランか割引を一つ探し、今の実質月額と比べる。`),
   };
 }
 
