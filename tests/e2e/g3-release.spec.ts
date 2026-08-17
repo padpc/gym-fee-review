@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const productionOrigin = 'https://gym-fee-review.smallframe.workers.dev';
+const feedbackFormUrl = 'https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAMAAByk0FNUNEhQSzJXRVhDSTBDNE5NSzIwWkRaU1UwNC4u';
 
 test('3ページが固有メタデータと通常リンクを持つ', async ({ page }) => {
   const expected = [
@@ -23,6 +24,10 @@ test('3ページが固有メタデータと通常リンクを持つ', async ({ p
     await expect(navigation.getByRole('link', { name: 'ホーム' })).toHaveAttribute('href', '/');
     await expect(navigation.getByRole('link', { name: '診断する' })).toHaveAttribute('href', '/check');
     await expect(navigation.getByRole('link', { name: '計算方法' })).toHaveAttribute('href', '/methodology');
+    const feedbackLink = page.getByRole('link', { name: /この診断への意見を送る/ });
+    await expect(feedbackLink).toHaveAttribute('href', feedbackFormUrl);
+    await expect(feedbackLink).toHaveAttribute('target', '_blank');
+    await expect(feedbackLink).toHaveAttribute('rel', 'noopener noreferrer');
   }
 });
 
@@ -60,7 +65,7 @@ test('公開候補のセキュリティヘッダーを返し、ローカル確�
   expect(response?.headers()['content-security-policy']).toContain("frame-ancestors 'none'");
   await expect(page.getByRole('heading', { name: '今の会費を払って続ける理由を確認' })).toBeVisible();
   expect(analyticsRequests).toEqual([]);
-  await expect(page.getByRole('link', { name: /この診断への意見を送る/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /この診断への意見を送る/ })).toHaveAttribute('href', feedbackFormUrl);
 });
 
 test('320pxと200%拡大相当でも主要導線が横へはみ出さない', async ({ page }) => {

@@ -2,7 +2,7 @@
 
 今の会費を、実際の支払額、来館、会費を払う理由として重要だった利用、その期待、家計への負担から見直すブラウザツールです。回答を並べるだけでなく、続ける根拠と見直す根拠を分け、結論と診断後に確認する内容を示します。
 
-このリポジトリは、利用者受入済みのG1第9回改訂を無料初版として固定し、G3の公開候補を準備している状態です。3ページの検索メタデータ、実404、OGP、セキュリティヘッダー、Cloudflare Workers Static Assets設定、匿名イベントAPIを含みます。Git remote、実D1、Web Analytics、意見フォームには未接続で、外部公開もしていません。
+このリポジトリは、利用者受入済みのG1第9回改訂を無料初版として固定し、G3の公開候補を準備している状態です。3ページの検索メタデータ、実404、OGP、セキュリティヘッダー、Cloudflare Workers Static Assets設定、匿名イベントAPI、匿名のMicrosoft Forms意見導線を含みます。Git remote、実D1、Web Analyticsには未接続で、外部公開もしていません。
 
 ## 無料初版でできること
 
@@ -59,4 +59,4 @@ npx.cmd wrangler d1 migrations apply gym-fee-review-events --local
 npm.cmd run preview:worker -- --port 8787
 ```
 
-意見フォームはMicrosoft Formsの匿名公開URLを実画面で検証してから`src/releaseConfig.ts`へ設定します。空欄の間はサイトにフォーム導線を表示しません。公開・復旧の停止点と手順は[RELEASE.md](./RELEASE.md)を参照してください。
+意見フォームは`pad pc / hostmy@outlook.jp`所有のMicrosoft Formsで作成し、ログイン不要、氏名・メールアドレスの自動取得なし、通知なしの回答画面を外部Chromeで確認済みです。公開URLは`src/releaseConfig.ts`にだけ設定し、サイト入力や診断結果を付加しません。公開・復旧の停止点と手順は[RELEASE.md](./RELEASE.md)を参照してください。

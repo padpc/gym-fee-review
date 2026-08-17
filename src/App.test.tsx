@@ -31,7 +31,10 @@ describe('GFR-G1R9 画面構成', () => {
     expect(document.body).toHaveTextContent('この診断は、入力した内容を整理するための目安です。継続・休会・変更・退会の最終判断はご自身で行ってください。');
     expect(document.body).not.toHaveTextContent('契約を変える前に、契約先の最新料金と条件を公式情報で確認してください。');
     expect(document.body).not.toHaveTextContent('入力は保存・送信しません。活動や時間を勝手な金額へ換算せず、不透明な総合点を出しません。');
-    expect(screen.queryByRole('link', { name: /この診断への意見を送る/ })).not.toBeInTheDocument();
+    const feedbackLink = screen.getByRole('link', { name: /この診断への意見を送る/ });
+    expect(feedbackLink).toHaveAttribute('href', 'https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAMAAByk0FNUNEhQSzJXRVhDSTBDNE5NSzIwWkRaU1UwNC4u');
+    expect(feedbackLink).toHaveAttribute('target', '_blank');
+    expect(feedbackLink).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
   it('ホームに通常の概要を置き、質問数の訴求とFAQを置かない', () => {

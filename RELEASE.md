@@ -4,8 +4,6 @@
 
 ## 現在の停止点
 
-- Microsoft Formsを`pad pc / hostmy@outlook.jp`で作成し、ログイン不要・氏名メール非収集・通知無効を外部Chromeで確認する。
-- 実フォームURLを`src/releaseConfig.ts`へ設定し、3ページから安全に開けることを確認する。
 - Cloudflareへ再ログインし、`smallframe.workers.dev`を所有するアカウントであることを確認する。
 - D1 `gym-fee-review-events`を作成し、`wrangler.jsonc`のゼロ値IDを実IDへ置き換える。
 - Cloudflare Web Analytics site tokenをビルド環境の`VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN`へ設定する。
@@ -13,6 +11,13 @@
 - 利用者がローカル公開候補とフォームを確認し、本番公開を明示承認する。
 
 上記が完了する前に`wrangler deploy`を実行しない。
+
+## 完了した外部準備
+
+- Microsoft Formsを`pad pc / hostmy@outlook.jp`で作成した。
+- 公開URLは`https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAMAAByk0FNUNEhQSzJXRVhDSTBDNE5NSzIwWkRaU1UwNC4u`である。
+- 外部Chromeでログイン要求なし、氏名・メールアドレスの自動取得なし、Q1～Q3必須、Q4任意、Q3複数選択、通知無効、質問順シャッフル無効を確認した。
+- 3ページのフッターから同じURLを`target="_blank" rel="noopener noreferrer"`で開き、入力値・結果・内部IDを付加しないことを自動試験で確認した。
 
 ## 1. 公開候補を固定する
 
