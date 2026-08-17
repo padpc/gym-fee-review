@@ -31,6 +31,14 @@ test('3ページが固有メタデータと通常リンクを持つ', async ({ p
   }
 });
 
+test('ホームにSearch Consoleの所有権確認タグを保持する', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('meta[name="google-site-verification"]')).toHaveAttribute(
+    'content',
+    '9VHCYh8ZiKl__kEB4AlL1AE-n9a0qhm9VyiOqzwLF3A',
+  );
+});
+
 test('robots・sitemap・OGP画像を配信し、不明パスを実404にする', async ({ page, request }) => {
   const robots = await request.get('/robots.txt');
   expect(robots.status()).toBe(200);
