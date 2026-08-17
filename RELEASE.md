@@ -4,16 +4,18 @@
 
 ## 現在の停止点
 
-- Cloudflareへ再ログインし、`smallframe.workers.dev`を所有するアカウントであることを確認する。
-- D1 `gym-fee-review-events`を作成し、`wrangler.jsonc`のゼロ値IDを実IDへ置き換える。
 - Cloudflare Web Analytics site tokenをビルド環境の`VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN`へ設定する。
-- GitHub owner `padpc`のリポジトリを接続する。
+- GitHubのPRを品質確認後に`main`へsquash mergeし、Cloudflare Workers Buildsを`main`へ接続する。
 - 利用者がローカル公開候補とフォームを確認し、本番公開を明示承認する。
 
 上記が完了する前に`wrangler deploy`を実行しない。
 
 ## 完了した外部準備
 
+- Cloudflare OAuthで`Hostmy@outlook.jp's Account`（Workers subdomain `smallframe`）を確認した。
+- 新規D1 `gym-fee-review-events`（APAC）へ`0001_events.sql`を適用し、`events`表が空であることを確認した。
+- Web Analyticsへ`gym-fee-review.smallframe.workers.dev`を登録した。site tokenは公開識別子だが、リポジトリには保存しない。
+- GitHub owner `padpc`に公開リポジトリ`gym-fee-review`を作成し、`origin`へ接続した。
 - Microsoft Formsを`pad pc / hostmy@outlook.jp`で作成した。
 - 公開URLは`https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=DQSIkWdsW0yxEjajBLZtrQAAAAAAAAAAAAMAAByk0FNUNEhQSzJXRVhDSTBDNE5NSzIwWkRaU1UwNC4u`である。
 - 外部Chromeでログイン要求なし、氏名・メールアドレスの自動取得なし、Q1～Q3必須、Q4任意、Q3複数選択、通知無効、質問順シャッフル無効を確認した。

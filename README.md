@@ -2,7 +2,7 @@
 
 今の会費を、実際の支払額、来館、会費を払う理由として重要だった利用、その期待、家計への負担から見直すブラウザツールです。回答を並べるだけでなく、続ける根拠と見直す根拠を分け、結論と診断後に確認する内容を示します。
 
-このリポジトリは、利用者受入済みのG1第9回改訂を無料初版として固定し、G3の公開候補を準備している状態です。3ページの検索メタデータ、実404、OGP、セキュリティヘッダー、Cloudflare Workers Static Assets設定、匿名イベントAPI、匿名のMicrosoft Forms意見導線を含みます。Git remote、実D1、Web Analyticsには未接続で、外部公開もしていません。
+このリポジトリは、利用者受入済みのG1第9回改訂を無料初版として固定し、G3の公開候補を準備している状態です。3ページの検索メタデータ、実404、OGP、セキュリティヘッダー、Cloudflare Workers Static Assets設定、匿名イベントAPI、匿名のMicrosoft Forms意見導線を含みます。GitHub remote、空の本番用D1、Web Analyticsサイトまで接続済みで、外部公開はまだ行っていません。
 
 ## 無料初版でできること
 
@@ -51,7 +51,7 @@ npm.cmd audit --audit-level=high
 
 ## 公開候補のローカル確認
 
-`wrangler.jsonc`のD1 IDは公開前停止用のゼロ値です。登録済みCloudflareアカウントで実D1を作成し、IDを置き換えるまでデプロイしてはいけません。Web Analyticsのsite tokenは公開用ビルド環境の`VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN`へ設定します。
+`wrangler.jsonc`は登録済みCloudflareアカウントの新規D1 `gym-fee-review-events`を参照します。remote migrationは適用済みですが、本番公開前に対象DBとmigration状態を再確認します。Web Analyticsのsite tokenはリポジトリへ保存せず、公開用ビルド環境の`VITE_CLOUDFLARE_WEB_ANALYTICS_TOKEN`へ設定します。
 
 ```powershell
 npm.cmd run deploy:dry-run

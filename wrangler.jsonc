@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "gym-fee-review-events",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "f3f53b0b-bf74-475c-b640-22ef0a4bb81c",
       "migrations_dir": "migrations"
     }
   ],
